@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TripAdvisor Scraper",
-  description: "Extract restaurant information from TripAdvisor pages.",
+  title: "E-commerce Security Lab",
+  description: "Scan online shops for checkout, payment, QPay, DNS, privacy, TLS, header, and browser-side security risks.",
 };
 
 export default function RootLayout({
