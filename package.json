@@ -8,19 +8,24 @@
     "start": "next start",
     "lint": "eslint"
   },
-  "dependencies": {
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
-    "next": "16.0.1"
-  },
   "devDependencies": {
-    "typescript": "^5",
+    "@tailwindcss/postcss": "^4.3.1",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "baseline-browser-mapping": "^2.10.38",
     "eslint": "^9",
-    "eslint-config-next": "16.0.1"
+    "eslint-config-next": "^16.2.9",
+    "tailwindcss": "^4.3.1",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "next": "^16.2.9",
+    "puppeteer": "^25.1.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
+  },
+  "overrides": {
+    "postcss": "8.5.15"
   }
 }
