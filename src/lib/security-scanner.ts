@@ -1,7 +1,7 @@
 import dns from "node:dns/promises";
 import net from "node:net";
 import tls from "node:tls";
-import puppeteer from "puppeteer";
+import puppeteer from "puppeteer-core";
 
 type Severity = "critical" | "high" | "medium" | "low" | "info" | "good";
 export type ReportLanguage = "mn" | "en";
@@ -298,6 +298,20 @@ async function fetchHeadersAndHtml(url: URL) {
       headers,
       body: await response.text().catch(() => ""),
     };
+  } catch (error) {
+    if (error instanceof Error) {
+      if (error.name === "AbortError") {
+        throw new Error("The site took too long to respond (20 s timeout).");
+      }
+      const cause = (error as { cause?: { code?: string } }).cause;
+      if (cause?.code === "ENOTFOUND") {
+        throw new Error(`Could not resolve hostname "${url.hostname}". Check the URL and try again.`);
+      }
+      if (cause?.code === "ECONNREFUSED") {
+        throw new Error("Connection refused. The site may be down or blocking automated requests.");
+      }
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -367,11 +381,59 @@ async function inspectDns(hostname: string): Promise<DnsSignal> {
   };
 }
 
-async function inspectInBrowser(url: URL): Promise<BrowserSignal> {
-  const browser = await puppeteer.launch({
-    headless: true,
+async function getBrowserLaunchOptions() {
+  // On Vercel/Lambda use the serverless-compatible Chromium build.
+  // Locally fall back to a system Chrome (or CHROMIUM_PATH env override).
+  const isLambda =
+    !!process.env.AWS_LAMBDA_FUNCTION_VERSION ||
+    process.env.VERCEL === "1" ||
+    process.env.VERCEL_ENV != null;
+
+  if (isLambda) {
+    const chromium = (await import("@sparticuz/chromium")).default;
+    return {
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: true as const,
+    };
+  }
+
+  const localChrome =
+    process.env.CHROMIUM_PATH ??
+    (process.platform === "win32"
+      ? "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+      : process.platform === "darwin"
+        ? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        : "/usr/bin/google-chrome");
+
+  return {
+    headless: true as const,
     args: ["--no-sandbox", "--disable-setuid-sandbox"],
-  });
+    executablePath: localChrome,
+  };
+}
+
+async function inspectInBrowser(url: URL): Promise<BrowserSignal> {
+  let browser: Awaited<ReturnType<typeof puppeteer.launch>> | undefined;
+  try {
+    const options = await getBrowserLaunchOptions();
+    browser = await puppeteer.launch(options);
+  } catch (error) {
+    return {
+      finalUrl: url.toString(),
+      title: null,
+      forms: 0,
+      passwordInputs: 0,
+      externalScripts: 0,
+      inlineScripts: 0,
+      mixedContent: [],
+      consoleErrors: [
+        `Browser launch failed: ${error instanceof Error ? error.message : "unknown error"}`,
+      ],
+      failedRequests: [],
+    };
+  }
 
   try {
     const page = await browser.newPage();
@@ -447,7 +509,7 @@ async function inspectInBrowser(url: URL): Promise<BrowserSignal> {
       failedRequests: [],
     };
   } finally {
-    await browser.close();
+    await browser?.close();
   }
 }
 
