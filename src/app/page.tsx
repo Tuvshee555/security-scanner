@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Severity = "critical" | "high" | "medium" | "low" | "info" | "good";
 type Language = "mn" | "en";
@@ -110,6 +110,14 @@ interface SecurityScanResult {
   aiReview: string | null;
   aiModel: string | null;
   aiError: string | null;
+}
+
+interface InvoiceData {
+  invoiceId: string;
+  qrImage: string;
+  qrText: string;
+  urls: { name: string; description: string; logo: string; link: string; deeplink: string }[];
+  amount: number;
 }
 
 const defaultUrl = "https://example.com";
@@ -228,6 +236,25 @@ const copy = {
     good: "Сайн",
     paymentNote:
       "Тайлбар: live дэлгүүр дээр төлбөр тойрох, үнэгүй захиалга үүсгэх, brute force хийх нь зөвшөөрөлгүй бол халдлага болно. Энэ tool public risk signal илрүүлээд, owner-д authorized manual payment test хэрэгтэй хэсгийг заана.",
+    unlockTitle: "Дэлгэрэнгүй тайлан нээх",
+    unlockDesc: "Яг юу эвдэрсэн, хэрхэн засах, AI тайлбар — бүгдийг харах",
+    unlockBtn: "QPay-аар нээх",
+    unlockPrice: "9,900₮",
+    unlockCreating: "Нэхэмжлэл үүсгэж байна...",
+    unlockWaiting: "QPay нээж, QR уншуулна уу...",
+    unlockScanAnother: "Нэхэмжлэл дуусаагүй — хаах уу?",
+    detailsLocked: "Засах арга болон нотолгоог харахын тулд тайланг нээнэ үү",
+    scanDone: "Шалгалт дууслаа",
+    criticalFound: (n: number) => `${n} АЮУЛТ АЛДАА ИЛЭРЛЭЭ`,
+    urgencyAlert: (n: number) => `⚠ АНХААР — ${n} аюулт эрсдэл илэрлээ`,
+    urgencyAlertSub: "Таны дэлгүүрийн checkout болон QPay хамгаалалт одоо эрсдэлтэй байна. Засах заавар доор байна.",
+    compareOld: "Мэргэжлийн аудит",
+    compareOldPrice: "₮150,000",
+    compareNew: "Автомат тайлан — ӨНӨӨДӨР",
+    expiresLabel: "Тайлан дуусах",
+    whatYouGet: ["Яг аль мөр код, юу засах", "AI тайлбар монгол хэлээр", "QPay bypass эрсдэлийн шалгалт", "Бүх алдааны засах заавар"],
+    lockedHint: "🔒 Тайлан нээгдэхэд харагдана",
+    paidBadge: "✓ ТАЙЛАН НЭЭГДЛЭЭ",
   },
   en: {
     badge: "E-commerce Security Lab",
@@ -291,6 +318,25 @@ const copy = {
     good: "Good",
     paymentNote:
       "Note: bypassing payment, creating free orders, or brute forcing a live shop without permission is an attack. This tool flags public risk signals and points the owner to authorized manual payment tests.",
+    unlockTitle: "Unlock full report",
+    unlockDesc: "Exactly what's broken, how to fix it, and AI summary — everything",
+    unlockBtn: "Pay with QPay",
+    unlockPrice: "9,900₮",
+    unlockCreating: "Creating invoice...",
+    unlockWaiting: "Open QPay and scan the QR code...",
+    unlockScanAnother: "Invoice not completed — close anyway?",
+    detailsLocked: "Unlock the report to see evidence, impact and fix",
+    scanDone: "Scan complete",
+    criticalFound: (n: number) => `${n} CRITICAL ISSUE${n === 1 ? "" : "S"} FOUND`,
+    urgencyAlert: (n: number) => `⚠ WARNING — ${n} critical risk${n === 1 ? "" : "s"} detected`,
+    urgencyAlertSub: "Your checkout and QPay integration have exposed vulnerabilities. Fix instructions are locked below.",
+    compareOld: "Professional audit",
+    compareOldPrice: "₮150,000",
+    compareNew: "Automated report — TODAY",
+    expiresLabel: "Report expires",
+    whatYouGet: ["Exact lines of code to fix", "AI summary in plain language", "QPay bypass risk check", "Fix guide for every finding"],
+    lockedHint: "🔒 Visible after unlock",
+    paidBadge: "✓ REPORT UNLOCKED",
   },
 };
 
@@ -300,6 +346,9 @@ export default function Home() {
   const [data, setData] = useState<SecurityScanResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isPaid, setIsPaid] = useState(false);
+  const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null);
+  const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const t = copy[language];
 
   const counts = useMemo(() => {
@@ -313,11 +362,28 @@ export default function Home() {
     return base;
   }, [data]);
 
+  useEffect(() => {
+    if (!invoiceData || isPaid) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/payment/status?invoice_id=${invoiceData.invoiceId}`);
+        const json = (await res.json()) as { paid?: boolean };
+        if (json.paid) {
+          setIsPaid(true);
+          setInvoiceData(null);
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [invoiceData, isPaid]);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setIsLoading(true);
     setError(null);
     setData(null);
+    setIsPaid(false);
+    setInvoiceData(null);
 
     try {
       const response = await fetch("/api/analyze", {
@@ -341,6 +407,32 @@ export default function Home() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  async function handleCreatePayment() {
+    setIsCreatingPayment(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/payment/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const json = (await res.json()) as InvoiceData & { error?: string };
+      if (!res.ok) throw new Error(json.error ?? "Payment creation failed");
+      setInvoiceData(json);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Payment creation failed");
+    } finally {
+      setIsCreatingPayment(false);
+    }
+  }
+
+  function handleCloseModal() {
+    if (invoiceData && !isPaid) {
+      if (!confirm(t.unlockScanAnother)) return;
+    }
+    setInvoiceData(null);
   }
 
   return (
@@ -406,8 +498,44 @@ export default function Home() {
 
         {isLoading ? <LoadingState language={language} /> : null}
 
+        {invoiceData ? (
+          <PaymentModal
+            invoice={invoiceData}
+            t={t}
+            onClose={handleCloseModal}
+          />
+        ) : null}
+
         {data ? (
           <div className="grid gap-5">
+            {!isPaid ? (
+              <section className="relative overflow-hidden rounded-xl border border-red-500/40 bg-red-950/30 p-5">
+                <div className="flex items-start gap-4">
+                  <span className="relative mt-0.5 flex size-3 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                    <span className="relative inline-flex size-3 rounded-full bg-red-500" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-base font-semibold text-red-200">
+                      {t.urgencyAlert(counts.critical + counts.high)}
+                    </p>
+                    <p className="mt-1 text-sm leading-6 text-red-300/80">{t.urgencyAlertSub}</p>
+                  </div>
+                  <button
+                    onClick={handleCreatePayment}
+                    disabled={isCreatingPayment}
+                    className="shrink-0 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-400 disabled:opacity-60"
+                  >
+                    {isCreatingPayment ? t.unlockCreating : `${t.unlockBtn} — ${t.unlockPrice}`}
+                  </button>
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-xl border border-emerald-400/30 bg-emerald-950/20 px-5 py-3">
+                <p className="text-sm font-semibold text-emerald-300">{t.paidBadge}</p>
+              </section>
+            )}
+
             <section className="grid gap-4 lg:grid-cols-[300px_1fr]">
               <div className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -459,49 +587,275 @@ export default function Home() {
               <div className="grid gap-3">
                 <SectionTitle eyebrow={t.findings} title={t.findingsTitle} />
                 {data.findings.map((finding) => (
-                  <FindingCard finding={finding} key={finding.id} t={t} language={language} />
+                  <FindingCard
+                    finding={finding}
+                    key={finding.id}
+                    t={t}
+                    language={language}
+                    isPaid={isPaid}
+                  />
                 ))}
+                {!isPaid ? (
+                  <UnlockBanner t={t} onUnlock={handleCreatePayment} isLoading={isCreatingPayment} scannedAt={data.scannedAt} />
+                ) : null}
               </div>
 
               <aside className="grid content-start gap-5">
-                <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-                  <SectionTitle eyebrow={t.ai} title={t.aiTitle} />
-                  {data.aiReview ? (
-                    <div className="mt-4">
-                      <MarkdownText text={data.aiReview} />
-                    </div>
-                  ) : (
-                    <p className="mt-4 text-sm leading-6 text-amber-100">
-                      {data.aiError}
-                    </p>
-                  )}
-                  {data.aiModel ? (
-                    <p className="mt-4 font-mono text-xs text-slate-500">
-                      {t.aiModel}: {data.aiModel}
-                    </p>
-                  ) : null}
-                </section>
+                {isPaid ? (
+                  <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
+                    <SectionTitle eyebrow={t.ai} title={t.aiTitle} />
+                    {data.aiReview ? (
+                      <div className="mt-4">
+                        <MarkdownText text={data.aiReview} />
+                      </div>
+                    ) : (
+                      <p className="mt-4 text-sm leading-6 text-amber-100">
+                        {data.aiError}
+                      </p>
+                    )}
+                    {data.aiModel ? (
+                      <p className="mt-4 font-mono text-xs text-slate-500">
+                        {t.aiModel}: {data.aiModel}
+                      </p>
+                    ) : null}
+                  </section>
+                ) : (
+                  <LockedPanel eyebrow={t.ai} title={t.aiTitle} t={t} onUnlock={handleCreatePayment} isLoading={isCreatingPayment} />
+                )}
 
-                <EcommercePanel data={data.ecommerce} t={t} />
-                <DnsPanel data={data.dns} t={t} />
-                <TlsPanel data={data.tls} t={t} />
+                {isPaid ? (
+                  <>
+                    <EcommercePanel data={data.ecommerce} t={t} />
+                    <DnsPanel data={data.dns} t={t} />
+                    <TlsPanel data={data.tls} t={t} />
+                  </>
+                ) : (
+                  <>
+                    <LockedPanel eyebrow={t.ecommerce} title={t.shopTitle} t={t} onUnlock={handleCreatePayment} isLoading={isCreatingPayment} />
+                    <LockedPanel eyebrow={t.dns} title={t.emailDomain} t={t} onUnlock={handleCreatePayment} isLoading={isCreatingPayment} />
+                    <LockedPanel eyebrow="TLS" title={t.cert} t={t} onUnlock={handleCreatePayment} isLoading={isCreatingPayment} />
+                  </>
+                )}
               </aside>
             </section>
 
-            <section className="grid gap-5 lg:grid-cols-2">
-              <PagesTable pages={data.ecommerce.pagesChecked} t={t} language={language} />
-              <EvidenceList
-                items={[...data.browser.consoleErrors, ...data.browser.failedRequests]}
-                title={t.runtime}
-                emptyLabel={t.noErrors}
-              />
-            </section>
+            {isPaid ? (
+              <section className="grid gap-5 lg:grid-cols-2">
+                <PagesTable pages={data.ecommerce.pagesChecked} t={t} language={language} />
+                <EvidenceList
+                  items={[...data.browser.consoleErrors, ...data.browser.failedRequests]}
+                  title={t.runtime}
+                  emptyLabel={t.noErrors}
+                />
+              </section>
+            ) : null}
 
-            <HeaderTable headers={data.headers} title={t.headers} />
+            {isPaid ? <HeaderTable headers={data.headers} title={t.headers} /> : null}
           </div>
         ) : null}
       </div>
     </main>
+  );
+}
+
+function CountdownTimer({ scannedAt }: { scannedAt: string }) {
+  const expiry = useMemo(() => new Date(scannedAt).getTime() + 24 * 60 * 60 * 1000, [scannedAt]);
+  const [remaining, setRemaining] = useState(() => Math.max(0, expiry - Date.now()));
+
+  useEffect(() => {
+    const id = setInterval(() => setRemaining(Math.max(0, expiry - Date.now())), 1000);
+    return () => clearInterval(id);
+  }, [expiry]);
+
+  const h = Math.floor(remaining / 3600000).toString().padStart(2, "0");
+  const m = Math.floor((remaining % 3600000) / 60000).toString().padStart(2, "0");
+  const s = Math.floor((remaining % 60000) / 1000).toString().padStart(2, "0");
+
+  return (
+    <span className="font-mono text-red-300 tabular-nums">
+      {h}:{m}:{s}
+    </span>
+  );
+}
+
+function UnlockBanner({
+  t,
+  onUnlock,
+  isLoading,
+  scannedAt,
+}: {
+  t: (typeof copy)[Language];
+  onUnlock: () => void;
+  isLoading: boolean;
+  scannedAt: string;
+}) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-cyan-400/20 bg-gradient-to-b from-[#0f1520] to-[#0b0d10]">
+      <div className="border-b border-white/5 bg-amber-400/5 px-5 py-3">
+        <p className="text-xs font-medium uppercase tracking-widest text-amber-300">
+          {t.expiresLabel} → <CountdownTimer scannedAt={scannedAt} />
+        </p>
+      </div>
+
+      <div className="grid gap-5 p-6 sm:grid-cols-[1fr_auto]">
+        <div className="grid gap-4">
+          <div className="grid gap-1">
+            <div className="flex items-baseline gap-3">
+              <span className="text-sm text-slate-500 line-through">{t.compareOld} {t.compareOldPrice}</span>
+            </div>
+            <div className="flex items-baseline gap-3">
+              <span className="text-3xl font-bold text-white">{t.unlockPrice}</span>
+              <span className="text-sm text-cyan-400">{t.compareNew}</span>
+            </div>
+          </div>
+
+          <ul className="grid gap-1.5">
+            {t.whatYouGet.map((item) => (
+              <li key={item} className="flex items-center gap-2 text-sm text-slate-300">
+                <svg className="size-4 shrink-0 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+                {item}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex items-center sm:items-end">
+          <button
+            onClick={onUnlock}
+            disabled={isLoading}
+            className="group relative w-full overflow-hidden rounded-xl bg-cyan-300 px-8 py-3.5 text-base font-bold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+          >
+            <span className="relative z-10">
+              {isLoading ? t.unlockCreating : `${t.unlockBtn} — ${t.unlockPrice}`}
+            </span>
+            <span className="absolute inset-0 -translate-x-full bg-white/20 transition-transform duration-300 group-hover:translate-x-full" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LockedPanel({
+  eyebrow,
+  title,
+  t,
+  onUnlock,
+  isLoading,
+}: {
+  eyebrow: string;
+  title: string;
+  t: (typeof copy)[Language];
+  onUnlock: () => void;
+  isLoading: boolean;
+}) {
+  return (
+    <section className="relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.04]">
+      <div className="p-5">
+        <SectionTitle eyebrow={eyebrow} title={title} />
+        <div className="mt-4 grid gap-3 blur-md opacity-15 pointer-events-none select-none" aria-hidden>
+          {[92, 68, 80, 55].map((w, i) => (
+            <div key={i} className="flex items-center gap-3">
+              <div className="h-4 w-28 rounded bg-white/10" />
+              <div className="h-4 rounded bg-white/15" style={{ width: `${w}%` }} />
+            </div>
+          ))}
+        </div>
+      </div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0b0d10]/60 backdrop-blur-[2px]">
+        <div className="rounded-full border border-white/10 bg-white/5 p-3">
+          <svg className="size-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+          </svg>
+        </div>
+        <p className="text-xs text-slate-500">{t.lockedHint}</p>
+        <button
+          onClick={onUnlock}
+          disabled={isLoading}
+          className="rounded-lg bg-cyan-300 px-5 py-2 text-sm font-bold text-slate-950 transition hover:bg-cyan-200 disabled:opacity-60"
+        >
+          {isLoading ? t.unlockCreating : `${t.unlockBtn} — ${t.unlockPrice}`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function PaymentModal({
+  invoice,
+  t,
+  onClose,
+}: {
+  invoice: InvoiceData;
+  t: (typeof copy)[Language];
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0f1117] p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="font-mono text-xs uppercase text-cyan-300">{t.unlockTitle}</p>
+            <p className="mt-1 text-3xl font-bold text-white">{invoice.amount.toLocaleString()}₮</p>
+            <p className="text-xs text-slate-500 line-through">{t.compareOldPrice}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-slate-400 transition hover:bg-white/10 hover:text-white"
+          >
+            <svg className="size-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {invoice.qrImage ? (
+          <div className="mt-5 flex flex-col items-center gap-3">
+            <div className="rounded-xl bg-white p-3 shadow-[0_0_30px_rgba(103,232,249,0.15)]">
+              <img
+                src={invoice.qrImage}
+                alt="QPay QR code"
+                className="size-48"
+              />
+            </div>
+            <p className="text-center text-xs text-slate-500">QPay app нээж, QR уншуулна уу</p>
+          </div>
+        ) : null}
+
+        <div className="mt-3 flex items-center justify-center gap-2">
+          <span className="relative flex size-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75" />
+            <span className="relative inline-flex size-2 rounded-full bg-cyan-400" />
+          </span>
+          <p className="text-sm text-cyan-300">{t.unlockWaiting}</p>
+        </div>
+
+        {invoice.urls?.length ? (
+          <div className="mt-4 grid gap-2">
+            <p className="text-xs uppercase text-slate-500">Банкны аппаар нэвтрэх</p>
+            {invoice.urls.slice(0, 4).map((bank) => (
+              <a
+                key={bank.name}
+                href={bank.deeplink || bank.link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-2.5 text-sm text-slate-200 transition hover:bg-white/10"
+              >
+                {bank.logo ? (
+                  <img src={bank.logo} alt={bank.name} className="size-6 rounded object-contain" />
+                ) : null}
+                <span>{bank.name}</span>
+                <svg className="ml-auto size-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                </svg>
+              </a>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -560,10 +914,12 @@ function FindingCard({
   finding,
   t,
   language,
+  isPaid,
 }: {
   finding: Finding;
   t: (typeof copy)[Language];
   language: Language;
+  isPaid: boolean;
 }) {
   const categoryLabel = CATEGORY_LABELS[language][finding.category] ?? finding.category;
   return (
@@ -581,11 +937,26 @@ function FindingCard({
           {t[finding.severity]}
         </span>
       </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
-        <FindingBlock label={t.evidence} text={finding.evidence} />
-        <FindingBlock label={t.impact} text={finding.impact} />
-        <FindingBlock label={t.fix} text={finding.recommendation} />
-      </div>
+      {isPaid ? (
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <FindingBlock label={t.evidence} text={finding.evidence} />
+          <FindingBlock label={t.impact} text={finding.impact} />
+          <FindingBlock label={t.fix} text={finding.recommendation} />
+        </div>
+      ) : (
+        <div className="relative mt-4 select-none">
+          <div className="grid gap-4 blur-md opacity-20 pointer-events-none md:grid-cols-3" aria-hidden>
+            <FindingBlock label={t.evidence} text={finding.evidence} />
+            <FindingBlock label={t.impact} text={finding.impact} />
+            <FindingBlock label={t.fix} text={finding.recommendation} />
+          </div>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="rounded-full border border-white/10 bg-[#0b0d10]/80 px-3 py-1 font-mono text-xs text-slate-500">
+              {t.lockedHint}
+            </span>
+          </div>
+        </div>
+      )}
     </article>
   );
 }
