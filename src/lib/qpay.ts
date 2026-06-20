@@ -1,15 +1,23 @@
-const BASE_URL = process.env.QPAY_BASE_URL!;
-const USERNAME = process.env.QPAY_USERNAME!;
-const PASSWORD = process.env.QPAY_PASSWORD!;
-const INVOICE_CODE = process.env.QPAY_INVOICE_CODE!;
+function getEnv(key: string): string {
+  const val = process.env[key];
+  if (!val) throw new Error(`Missing env var: ${key}. Add it to Vercel → Settings → Environment Variables.`);
+  return val;
+}
 
 async function getToken(): Promise<string> {
-  const credentials = Buffer.from(`${USERNAME}:${PASSWORD}`).toString("base64");
+  const BASE_URL = getEnv("QPAY_BASE_URL");
+  const credentials = Buffer.from(`${getEnv("QPAY_USERNAME")}:${getEnv("QPAY_PASSWORD")}`).toString("base64");
   const res = await fetch(`${BASE_URL}/auth/token`, {
     method: "POST",
-    headers: { Authorization: `Basic ${credentials}` },
+    headers: {
+      Authorization: `Basic ${credentials}`,
+      "Content-Type": "application/json",
+    },
   });
-  if (!res.ok) throw new Error(`QPay auth failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`QPay auth failed (${res.status}): ${body.slice(0, 200)}`);
+  }
   const data = (await res.json()) as { access_token: string };
   return data.access_token;
 }
@@ -27,6 +35,8 @@ export async function createInvoice(options: {
   amount: number;
   callbackUrl: string;
 }): Promise<QpayInvoice> {
+  const BASE_URL = getEnv("QPAY_BASE_URL");
+  const INVOICE_CODE = getEnv("QPAY_INVOICE_CODE");
   const token = await getToken();
   const res = await fetch(`${BASE_URL}/invoice`, {
     method: "POST",
@@ -57,6 +67,7 @@ export interface QpayPaymentCheck {
 }
 
 export async function checkPayment(invoiceId: string): Promise<QpayPaymentCheck> {
+  const BASE_URL = getEnv("QPAY_BASE_URL");
   const token = await getToken();
   const res = await fetch(`${BASE_URL}/payment/check/${invoiceId}`, {
     headers: { Authorization: `Bearer ${token}` },

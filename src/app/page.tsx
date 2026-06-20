@@ -470,15 +470,18 @@ export default function Home() {
                 id="url"
                 value={url}
                 onChange={(event) => setUrl(event.target.value)}
-                className="min-h-11 rounded-md border border-white/15 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
+                className="min-h-12 rounded-md border border-white/15 bg-white px-3 text-sm text-slate-950 outline-none transition focus:border-cyan-300 focus:ring-2 focus:ring-cyan-300/20"
                 placeholder="https://example.mn"
                 type="text"
+                inputMode="url"
+                autoCapitalize="none"
+                autoCorrect="off"
                 required
               />
               <button
                 type="submit"
                 disabled={isLoading}
-                className="min-h-11 rounded-md bg-cyan-300 px-5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60"
+                className="min-h-12 w-full rounded-md bg-cyan-300 px-5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {isLoading ? t.scanning : t.run}
               </button>
@@ -509,22 +512,24 @@ export default function Home() {
         {data ? (
           <div className="grid gap-5">
             {!isPaid ? (
-              <section className="relative overflow-hidden rounded-xl border border-red-500/40 bg-red-950/30 p-5">
-                <div className="flex items-start gap-4">
-                  <span className="relative mt-0.5 flex size-3 shrink-0">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                    <span className="relative inline-flex size-3 rounded-full bg-red-500" />
-                  </span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-base font-semibold text-red-200">
-                      {t.urgencyAlert(counts.critical + counts.high)}
-                    </p>
-                    <p className="mt-1 text-sm leading-6 text-red-300/80">{t.urgencyAlertSub}</p>
+              <section className="relative overflow-hidden rounded-xl border border-red-500/40 bg-red-950/30 p-4 sm:p-5">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+                  <div className="flex items-start gap-3 sm:flex-1 sm:min-w-0">
+                    <span className="relative mt-1 flex size-3 shrink-0">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                      <span className="relative inline-flex size-3 rounded-full bg-red-500" />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-red-200 sm:text-base">
+                        {t.urgencyAlert(counts.critical + counts.high)}
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-red-300/80 sm:text-sm sm:leading-6">{t.urgencyAlertSub}</p>
+                    </div>
                   </div>
                   <button
                     onClick={handleCreatePayment}
                     disabled={isCreatingPayment}
-                    className="shrink-0 rounded-lg bg-red-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-400 disabled:opacity-60"
+                    className="w-full rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-400 disabled:opacity-60 sm:w-auto sm:shrink-0"
                   >
                     {isCreatingPayment ? t.unlockCreating : `${t.unlockBtn} — ${t.unlockPrice}`}
                   </button>
@@ -793,8 +798,8 @@ function PaymentModal({
   onClose: () => void;
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-sm rounded-2xl border border-white/10 bg-[#0f1117] p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="w-full max-w-sm overflow-y-auto rounded-t-2xl border border-white/10 bg-[#0f1117] p-5 shadow-2xl sm:rounded-2xl sm:p-6" style={{ maxHeight: "92dvh" }}>
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="font-mono text-xs uppercase text-cyan-300">{t.unlockTitle}</p>
@@ -812,12 +817,12 @@ function PaymentModal({
         </div>
 
         {invoice.qrImage ? (
-          <div className="mt-5 flex flex-col items-center gap-3">
-            <div className="rounded-xl bg-white p-3 shadow-[0_0_30px_rgba(103,232,249,0.15)]">
+          <div className="mt-4 flex flex-col items-center gap-2">
+            <div className="rounded-xl bg-white p-2.5 shadow-[0_0_30px_rgba(103,232,249,0.15)]">
               <img
                 src={invoice.qrImage}
                 alt="QPay QR code"
-                className="size-48"
+                className="size-40 sm:size-48"
               />
             </div>
             <p className="text-center text-xs text-slate-500">QPay app нээж, QR уншуулна уу</p>

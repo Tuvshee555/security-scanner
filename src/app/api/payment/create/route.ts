@@ -32,6 +32,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Payment creation failed";
+    console.error("[payment/create]", message);
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
