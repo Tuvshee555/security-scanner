@@ -591,10 +591,38 @@ function FindingCard({
 }
 
 function FindingBlock({ label, text }: { label: string; text: string }) {
+  const hasLines = text.includes("\n");
   return (
     <div>
       <p className="text-xs uppercase text-slate-500">{label}</p>
-      <p className="mt-2 break-words text-sm leading-6 text-slate-300">{text}</p>
+      {hasLines ? (
+        <div className="mt-2 space-y-1">
+          {text.split("\n").map((line, i) => {
+            const isCode =
+              line.startsWith("  ") ||
+              line.startsWith("<script") ||
+              /^[a-zA-Z_]+\s*[\({]/.test(line.trim()) ||
+              line.trim().startsWith("//") ||
+              line.trim().startsWith("?") ||
+              line.trim().startsWith("https://");
+            if (line.trim() === "") return <div key={i} className="h-1" />;
+            return (
+              <p
+                key={i}
+                className={
+                  isCode
+                    ? "break-all font-mono text-xs leading-5 text-cyan-200"
+                    : "break-words text-sm leading-6 text-slate-300"
+                }
+              >
+                {line}
+              </p>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-2 break-words text-sm leading-6 text-slate-300">{text}</p>
+      )}
     </div>
   );
 }
