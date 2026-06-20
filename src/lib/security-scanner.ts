@@ -390,12 +390,11 @@ async function inspectInBrowser(url: URL): Promise<BrowserSignal> {
     });
 
     page.on("requestfailed", (request) => {
-      failedRequests.push(
-        `${request.failure()?.errorText ?? "failed"}: ${request.url()}`.slice(
-          0,
-          240,
-        ),
-      );
+      const errorText = request.failure()?.errorText ?? "failed";
+      const reqUrl = request.url();
+      // Next.js RSC prefetch aborts are expected client-side behaviour, not real errors
+      if (errorText === "net::ERR_ABORTED" && /[?&]_rsc=/.test(reqUrl)) return;
+      failedRequests.push(`${errorText}: ${reqUrl}`.slice(0, 240));
     });
 
     await page.goto(url.toString(), {
@@ -510,8 +509,12 @@ async function inspectEcommerce(url: URL, homeHtml: string): Promise<EcommerceSi
       new Set(
         pages
           .filter((page) => page.kind === "checkout")
-          .flatMap((page) => page.scripts)
-          .filter((script) => isSuspiciousCheckoutScript(script)),
+          .flatMap((page) => {
+            const pageHost = (() => {
+              try { return new URL(page.url).hostname; } catch { return ""; }
+            })();
+            return page.scripts.filter((script) => isSuspiciousCheckoutScript(script, pageHost));
+          }),
       ),
     ).slice(0, 12),
     riskyClientPaymentSignals: Array.from(
@@ -647,6 +650,30 @@ function buildFindings(
     findings.push(finding("cookie-httponly", "Cookie missing HttpOnly flag", "medium", "Cookies", "At least one Set-Cookie header did not include HttpOnly.", "Injected JavaScript may be able to steal cookie values.", "Add HttpOnly to cookies that do not need browser JavaScript access."));
   }
 
+  if (cookieHeader && !/;\s*samesite/i.test(cookieHeader)) {
+    findings.push(finding("cookie-samesite", "Cookie missing SameSite flag", "low", "Cookies", "At least one Set-Cookie header did not include SameSite.", "Cookies without SameSite may be sent on cross-site requests, which increases CSRF risk.", "Add SameSite=Strict or SameSite=Lax to cookies that do not need cross-origin access."));
+  }
+
+  if (headers["x-powered-by"]) {
+    findings.push(finding("x-powered-by", "Server technology disclosed via X-Powered-By", "low", "Headers", `X-Powered-By: ${headers["x-powered-by"]}`, "Knowing the specific framework version makes it easier to target known vulnerabilities.", "Remove or suppress the X-Powered-By header in your server or framework configuration."));
+  }
+
+  if (tlsSignal.validTo) {
+    const expiresAt = new Date(tlsSignal.validTo);
+    const daysLeft = Math.floor((expiresAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    if (daysLeft < 30) {
+      findings.push(finding(
+        "cert-expiry-soon",
+        `TLS certificate expires in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`,
+        daysLeft < 7 ? "critical" : "high",
+        "Transport",
+        `Certificate valid to: ${tlsSignal.validTo}`,
+        "When the certificate expires visitors see a browser warning and HTTPS stops working.",
+        "Renew the certificate before it expires; consider automated renewal with Let's Encrypt.",
+      ));
+    }
+  }
+
   if (browser.passwordInputs > 0 && finalUrl.protocol !== "https:") {
     findings.push(finding("password-http", "Password field appears on an insecure page", "critical", "Forms", `${browser.passwordInputs} password input(s) were found on HTTP.`, "Credentials can be intercepted or modified in transit.", "Move login and account forms to HTTPS immediately."));
   }
@@ -730,6 +757,16 @@ function addEcommerceFindings(
 
   if (!dnsSignal.dmarc && ecommerce.isLikelyEcommerce) {
     findings.push(finding("dmarc-missing", "DMARC record was not found", "medium", "DNS", "No _dmarc TXT record was found.", "Fake order, invoice, and refund emails are harder for receivers to reject.", "Add DMARC, start with monitoring, then move toward quarantine or reject."));
+  }
+
+  if (dnsSignal.dmarc && /p=none/i.test(dnsSignal.dmarc)) {
+    findings.push(finding("dmarc-not-enforced", "DMARC is in monitoring mode only (p=none)", "medium", "DNS", dnsSignal.dmarc, "Spoofed emails from your domain are not rejected by receiving mail servers — only reported.", "Move to p=quarantine then p=reject after reviewing DMARC aggregate reports for 2–4 weeks."));
+  }
+
+  if (dnsSignal.spf && /\+all/i.test(dnsSignal.spf)) {
+    findings.push(finding("spf-allow-all", "SPF record allows any server to send email (+all)", "high", "DNS", dnsSignal.spf, "Any server on the internet can send email that appears to come from this domain.", "Replace +all with -all and list only the sending services you actually use."));
+  } else if (dnsSignal.spf && /~all/i.test(dnsSignal.spf)) {
+    findings.push(finding("spf-softfail", "SPF uses soft-fail (~all) — not a hard reject", "low", "DNS", dnsSignal.spf, "Receiving servers may still accept spoofed email that fails SPF instead of rejecting it.", "Upgrade to -all (hard fail) once all legitimate sending sources are listed in the record."));
   }
 
   if (!dnsSignal.caa.length) {
@@ -1022,13 +1059,23 @@ function isUsefulEcommerceUrl(url: URL) {
 }
 
 function classifyPage(url: URL, html: string): PageSignal["kind"] {
-  const text = `${url.pathname} ${html.slice(0, 12000)}`;
-  if (/checkout|payment|pay|qpay|төлбөр/i.test(text)) return "checkout";
-  if (/cart|basket|сагс/i.test(text)) return "cart";
-  if (/login|sign-in|account|password|нэвтрэх/i.test(text)) return "login";
-  if (/privacy|terms|refund|return|policy|нөхцөл|буцаалт/i.test(text)) return "policy";
-  if (/product|sku|add to cart|buy now|shop|store|захиалах|худалдан/i.test(text)) return "product";
-  if (url.pathname === "/" || url.pathname === "") return "home";
+  const path = url.pathname.toLowerCase();
+
+  // URL path is the primary signal — site-wide nav/footer keywords pollute HTML content
+  if (/\/(checkout|payment|pay|order\/confirm|qpay)/.test(path)) return "checkout";
+  if (/\/(cart|basket|bag)/.test(path)) return "cart";
+  if (/\/(login|sign-in|signin|нэвтрэх)/.test(path)) return "login";
+  if (/\/(account|profile|my-account|dashboard)/.test(path)) return "login";
+  if (/\/(privacy|terms|refund|return|policy|нөхцөл|буцаалт|contact)/.test(path)) return "policy";
+  if (/\/(product|products|shop|store|catalog|захиалах|худалдан)/.test(path)) return "product";
+  if (path === "/" || path === "") return "home";
+
+  // Fall back to HTML only when URL is ambiguous — use specific structural patterns
+  const snippet = html.slice(0, 3000);
+  if (/<form[^>]*action[^>]*checkout|id=["']checkout/i.test(snippet)) return "checkout";
+  if (/<input[^>]+type=["']password/i.test(snippet)) return "login";
+  if (/add to cart|buy now|захиалах/i.test(snippet)) return "product";
+
   return "other";
 }
 
@@ -1091,7 +1138,7 @@ function calculatePaymentBypassRisk(
   } as const;
 }
 
-function isSuspiciousCheckoutScript(scriptUrl: string) {
+function isSuspiciousCheckoutScript(scriptUrl: string, siteHost = "") {
   if (
     /stripe|paypal|qpay|shopify|woocommerce|monpay|socialpay|google|googletagmanager|facebook|meta|cloudflare|cdn\.jsdelivr|unpkg/i.test(
       scriptUrl,
@@ -1102,6 +1149,7 @@ function isSuspiciousCheckoutScript(scriptUrl: string) {
 
   try {
     const host = new URL(scriptUrl).hostname;
+    if (siteHost && host === siteHost) return false; // first-party scripts are never suspicious
     return Boolean(host) && !/^\w+\.(js|css)$/i.test(host);
   } catch {
     return false;

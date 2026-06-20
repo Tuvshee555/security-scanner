@@ -115,6 +115,56 @@ interface SecurityScanResult {
 const defaultUrl = "https://example.com";
 const severityOrder: Severity[] = ["critical", "high", "medium", "low", "info", "good"];
 
+const METRIC_LABELS: Record<Language, Record<string, string>> = {
+  mn: {
+    "Transport": "Холболт",
+    "Headers": "Толгой",
+    "E-commerce": "Дэлгүүр",
+    "Payments": "Төлбөр",
+    "DNS / Email": "DNS/Имэйл",
+    "Browser Runtime": "Browser",
+  },
+  en: {},
+};
+
+const CATEGORY_LABELS: Record<Language, Record<string, string>> = {
+  mn: {
+    "Headers": "Толгой",
+    "Transport": "Холболт",
+    "Cookies": "Cookie",
+    "Browser": "Browser",
+    "Reliability": "Найдвартай байдал",
+    "Forms": "Маягт",
+    "E-commerce": "Дэлгүүр",
+    "Payments": "Төлбөр",
+    "Trust": "Итгэл",
+    "DNS": "DNS",
+    "Privacy": "Нууцлал",
+  },
+  en: {},
+};
+
+const KIND_LABELS: Record<Language, Record<PageSignal["kind"], string>> = {
+  mn: {
+    home: "Нүүр",
+    product: "Бүтээгдэхүүн",
+    cart: "Сагс",
+    checkout: "Checkout",
+    login: "Нэвтрэх",
+    policy: "Бодлого",
+    other: "Бусад",
+  },
+  en: {
+    home: "Home",
+    product: "Product",
+    cart: "Cart",
+    checkout: "Checkout",
+    login: "Login",
+    policy: "Policy",
+    other: "Other",
+  },
+};
+
 const copy = {
   mn: {
     badge: "E-commerce хамгаалалтын лаборатори",
@@ -127,6 +177,9 @@ const copy = {
     scanning: "Шалгаж байна...",
     overall: "Ерөнхий аюулгүй байдал",
     target: "Шалгасан сайт",
+    score: "Оноо",
+    time: "Хугацаа",
+    scanned: "Шалгасан огноо",
     findings: "Олдсон зүйлс",
     findingsTitle: "Юу сайн, юу муу, юу яаралтай вэ",
     evidence: "Нотолгоо",
@@ -134,14 +187,45 @@ const copy = {
     fix: "Засах арга",
     ai: "AI тайлбар",
     aiTitle: "Худалдагчид ойлгомжтой дүгнэлт",
-    ecommerce: "Дэлгүүрийн шалгалт",
-    dns: "DNS / Имэйл итгэлцэл",
-    pages: "Шалгасан e-commerce хуудсууд",
+    aiModel: "Загвар",
+    ecommerce: "E-commerce",
+    shopTitle: "Дэлгүүр ба төлбөр",
+    likelyShop: "Дэлгүүр мөн үү",
+    checkout: "Checkout",
+    cart: "Сагс",
+    login: "Нэвтрэх",
+    platform: "Платформ",
+    payments: "Төлбөр систем",
+    bypassRisk: "Bypass эрсдэл",
+    privacy: "Нууцлал",
+    refund: "Буцаалт",
+    cookieConsent: "Cookie зөвшөөрөл",
+    dns: "DNS",
+    emailDomain: "Имэйл ба домэйн",
+    cert: "Сертификат",
+    enabled: "Идэвхтэй",
+    trusted: "Итгэмжлэгдсэн",
+    protocol: "Протокол",
+    cipher: "Шифр",
+    issuer: "Гаргасан",
+    validTo: "Хүчинтэй хүртэл",
+    crawlEyebrow: "Шалгалт",
+    crawlTitle: "Шалгасан checkout / cart / login хуудсууд",
+    kindCol: "Төрөл",
+    formsCol: "Маягт",
+    providersCol: "Төлбөр",
     runtime: "Browser алдаа ба failed request",
     headers: "Response headers",
+    noErrors: "Browser алдаа олдсонгүй.",
     yes: "Тийм",
     no: "Үгүй",
     unknown: "Мэдэгдэхгүй",
+    critical: "Аюулт",
+    high: "Өндөр",
+    medium: "Дунд",
+    low: "Бага",
+    info: "Мэдээлэл",
+    good: "Сайн",
     paymentNote:
       "Тайлбар: live дэлгүүр дээр төлбөр тойрох, үнэгүй захиалга үүсгэх, brute force хийх нь зөвшөөрөлгүй бол халдлага болно. Энэ tool public risk signal илрүүлээд, owner-д authorized manual payment test хэрэгтэй хэсгийг заана.",
   },
@@ -156,6 +240,9 @@ const copy = {
     scanning: "Scanning...",
     overall: "Overall safety",
     target: "Target",
+    score: "Score",
+    time: "Time",
+    scanned: "Scanned",
     findings: "Findings",
     findingsTitle: "What is good, bad, and urgent",
     evidence: "Evidence",
@@ -163,14 +250,45 @@ const copy = {
     fix: "Fix",
     ai: "AI review",
     aiTitle: "Plain-English owner summary",
-    ecommerce: "Shop audit",
-    dns: "DNS / Email trust",
-    pages: "E-commerce pages checked",
+    aiModel: "Model",
+    ecommerce: "E-commerce",
+    shopTitle: "Shop and payments",
+    likelyShop: "Likely shop",
+    checkout: "Checkout",
+    cart: "Cart",
+    login: "Login",
+    platform: "Platform",
+    payments: "Payments",
+    bypassRisk: "Bypass risk",
+    privacy: "Privacy",
+    refund: "Refund",
+    cookieConsent: "Cookie consent",
+    dns: "DNS",
+    emailDomain: "Email and domain",
+    cert: "Certificate",
+    enabled: "Enabled",
+    trusted: "Trusted",
+    protocol: "Protocol",
+    cipher: "Cipher",
+    issuer: "Issuer",
+    validTo: "Valid to",
+    crawlEyebrow: "Crawl",
+    crawlTitle: "Checked checkout/cart/login pages",
+    kindCol: "Kind",
+    formsCol: "Forms",
+    providersCol: "Providers",
     runtime: "Browser errors and failed requests",
     headers: "Response headers",
+    noErrors: "No browser runtime errors found.",
     yes: "Yes",
     no: "No",
     unknown: "Unknown",
+    critical: "Critical",
+    high: "High",
+    medium: "Medium",
+    low: "Low",
+    info: "Info",
+    good: "Good",
     paymentNote:
       "Note: bypassing payment, creating free orders, or brute forcing a live shop without permission is an attack. This tool flags public risk signals and points the owner to authorized manual payment tests.",
   },
@@ -300,10 +418,10 @@ export default function Home() {
                   <ScoreRing score={data.score} />
                 </div>
                 <dl className="mt-5 grid gap-3 text-sm">
-                  <MetricRow label="Score" value={`${data.score}/100`} />
+                  <MetricRow label={t.score} value={`${data.score}/100`} />
                   <MetricRow label="HTTP" value={data.status?.toString() ?? t.unknown} />
-                  <MetricRow label="Time" value={`${data.responseTimeMs} ms`} />
-                  <MetricRow label="Scanned" value={new Date(data.scannedAt).toLocaleString()} />
+                  <MetricRow label={t.time} value={`${data.responseTimeMs} ms`} />
+                  <MetricRow label={t.scanned} value={new Date(data.scannedAt).toLocaleString()} />
                 </dl>
               </div>
 
@@ -321,7 +439,7 @@ export default function Home() {
                       className="rounded-md border border-white/10 bg-black/20 p-3"
                       key={severity}
                     >
-                      <p className="text-xs uppercase text-slate-500">{severity}</p>
+                      <p className="text-xs uppercase text-slate-500">{t[severity]}</p>
                       <p className={`mt-2 text-2xl font-semibold ${severityText(severity)}`}>
                         {counts[severity]}
                       </p>
@@ -331,7 +449,7 @@ export default function Home() {
 
                 <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
                   {data.metrics.map((metric) => (
-                    <MetricBar key={metric.label} metric={metric} />
+                    <MetricBar key={metric.label} metric={metric} language={language} />
                   ))}
                 </div>
               </div>
@@ -341,7 +459,7 @@ export default function Home() {
               <div className="grid gap-3">
                 <SectionTitle eyebrow={t.findings} title={t.findingsTitle} />
                 {data.findings.map((finding) => (
-                  <FindingCard finding={finding} key={finding.id} t={t} />
+                  <FindingCard finding={finding} key={finding.id} t={t} language={language} />
                 ))}
               </div>
 
@@ -349,8 +467,8 @@ export default function Home() {
                 <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
                   <SectionTitle eyebrow={t.ai} title={t.aiTitle} />
                   {data.aiReview ? (
-                    <div className="mt-4 whitespace-pre-wrap text-sm leading-6 text-slate-200">
-                      {data.aiReview}
+                    <div className="mt-4">
+                      <MarkdownText text={data.aiReview} />
                     </div>
                   ) : (
                     <p className="mt-4 text-sm leading-6 text-amber-100">
@@ -359,22 +477,23 @@ export default function Home() {
                   )}
                   {data.aiModel ? (
                     <p className="mt-4 font-mono text-xs text-slate-500">
-                      Model: {data.aiModel}
+                      {t.aiModel}: {data.aiModel}
                     </p>
                   ) : null}
                 </section>
 
-                <EcommercePanel data={data.ecommerce} language={language} />
-                <DnsPanel data={data.dns} language={language} />
-                <TlsPanel data={data.tls} language={language} />
+                <EcommercePanel data={data.ecommerce} t={t} />
+                <DnsPanel data={data.dns} t={t} />
+                <TlsPanel data={data.tls} t={t} />
               </aside>
             </section>
 
             <section className="grid gap-5 lg:grid-cols-2">
-              <PagesTable pages={data.ecommerce.pagesChecked} language={language} />
+              <PagesTable pages={data.ecommerce.pagesChecked} t={t} language={language} />
               <EvidenceList
                 items={[...data.browser.consoleErrors, ...data.browser.failedRequests]}
                 title={t.runtime}
+                emptyLabel={t.noErrors}
               />
             </section>
 
@@ -418,11 +537,12 @@ function ScoreRing({ score }: { score: number }) {
   );
 }
 
-function MetricBar({ metric }: { metric: Metric }) {
+function MetricBar({ metric, language }: { metric: Metric; language: Language }) {
+  const label = METRIC_LABELS[language][metric.label] ?? metric.label;
   return (
     <div className="rounded-md border border-white/10 bg-black/20 p-3">
       <div className="flex items-center justify-between gap-2">
-        <p className="text-sm font-medium text-white">{metric.label}</p>
+        <p className="text-sm font-medium text-white">{label}</p>
         <p className="font-mono text-sm text-slate-300">{metric.score}</p>
       </div>
       <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
@@ -439,15 +559,18 @@ function MetricBar({ metric }: { metric: Metric }) {
 function FindingCard({
   finding,
   t,
+  language,
 }: {
   finding: Finding;
   t: (typeof copy)[Language];
+  language: Language;
 }) {
+  const categoryLabel = CATEGORY_LABELS[language][finding.category] ?? finding.category;
   return (
     <article className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase text-slate-500">{finding.category}</p>
+          <p className="text-xs uppercase text-slate-500">{categoryLabel}</p>
           <h3 className="mt-1 text-lg font-semibold text-white">{finding.title}</h3>
         </div>
         <span
@@ -455,7 +578,7 @@ function FindingCard({
             finding.severity,
           )}`}
         >
-          {finding.severity}
+          {t[finding.severity]}
         </span>
       </div>
       <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -476,43 +599,90 @@ function FindingBlock({ label, text }: { label: string; text: string }) {
   );
 }
 
+function MarkdownText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  return (
+    <div className="space-y-1">
+      {lines.map((line, i) => {
+        if (line.startsWith("### ")) {
+          return (
+            <h3 key={i} className="mt-4 text-sm font-semibold text-white first:mt-0">
+              {inlineBold(line.slice(4))}
+            </h3>
+          );
+        }
+        if (line.startsWith("## ")) {
+          return (
+            <h2 key={i} className="mt-4 text-base font-semibold text-white first:mt-0">
+              {inlineBold(line.slice(3))}
+            </h2>
+          );
+        }
+        if (line === "---") {
+          return <hr key={i} className="my-3 border-white/10" />;
+        }
+        if (line.trim() === "") {
+          return <div key={i} className="h-2" />;
+        }
+        const isBullet = /^[-*]\s/.test(line);
+        const content = isBullet ? line.replace(/^[-*]\s/, "") : line;
+        return (
+          <p
+            key={i}
+            className={`text-sm leading-6 text-slate-200 ${isBullet ? "pl-4 before:mr-2 before:content-['•']" : ""}`}
+          >
+            {inlineBold(content)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function inlineBold(text: string) {
+  const parts = text.split(/(\*\*[^*]+\*\*)/);
+  return parts.map((part, i) =>
+    part.startsWith("**") ? (
+      <strong key={i} className="font-semibold text-white">
+        {part.slice(2, -2)}
+      </strong>
+    ) : (
+      part
+    ),
+  );
+}
+
 function EcommercePanel({
   data,
-  language,
+  t,
 }: {
   data: EcommerceSignal;
-  language: Language;
+  t: (typeof copy)[Language];
 }) {
-  const yn = (value: boolean) =>
-    value ? (language === "mn" ? "Тийм" : "Yes") : language === "mn" ? "Үгүй" : "No";
+  const yn = (value: boolean) => (value ? t.yes : t.no);
 
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-      <SectionTitle
-        eyebrow={language === "mn" ? "E-commerce" : "E-commerce"}
-        title={language === "mn" ? "Дэлгүүр ба төлбөр" : "Shop and payments"}
-      />
+      <SectionTitle eyebrow={t.ecommerce} title={t.shopTitle} />
       <dl className="mt-4 grid gap-3 text-sm">
-        <MetricRow label={language === "mn" ? "Дэлгүүр мөн үү" : "Likely shop"} value={yn(data.isLikelyEcommerce)} />
+        <MetricRow label={t.likelyShop} value={yn(data.isLikelyEcommerce)} />
         <MetricRow label="QPay" value={yn(data.qpayDetected)} />
-        <MetricRow label={language === "mn" ? "Checkout" : "Checkout"} value={data.checkoutPages.toString()} />
-        <MetricRow label={language === "mn" ? "Cart" : "Cart"} value={data.cartPages.toString()} />
-        <MetricRow label={language === "mn" ? "Login" : "Login"} value={data.loginPages.toString()} />
-        <MetricRow label={language === "mn" ? "Platform" : "Platform"} value={data.platform.join(", ") || "-"} />
-        <MetricRow label={language === "mn" ? "Төлбөр" : "Payments"} value={data.paymentProviders.join(", ") || "-"} />
+        <MetricRow label={t.checkout} value={data.checkoutPages.toString()} />
+        <MetricRow label={t.cart} value={data.cartPages.toString()} />
+        <MetricRow label={t.login} value={data.loginPages.toString()} />
+        <MetricRow label={t.platform} value={data.platform.join(", ") || "-"} />
+        <MetricRow label={t.payments} value={data.paymentProviders.join(", ") || "-"} />
         <MetricRow
-          label="Bypass risk"
+          label={t.bypassRisk}
           value={`${data.paymentBypassRiskScore}/100 (${data.paymentBypassRiskLevel})`}
         />
-        <MetricRow label={language === "mn" ? "Privacy" : "Privacy"} value={yn(data.policies.privacy)} />
-        <MetricRow label={language === "mn" ? "Refund" : "Refund"} value={yn(data.policies.refund)} />
-        <MetricRow label={language === "mn" ? "Cookie consent" : "Cookie consent"} value={yn(data.cookieConsent)} />
+        <MetricRow label={t.privacy} value={yn(data.policies.privacy)} />
+        <MetricRow label={t.refund} value={yn(data.policies.refund)} />
+        <MetricRow label={t.cookieConsent} value={yn(data.cookieConsent)} />
       </dl>
       {data.riskyClientPaymentSignals.length ? (
         <div className="mt-4 rounded-md border border-orange-300/30 bg-orange-400/10 p-3">
-          <p className="text-xs uppercase text-orange-100">
-            Payment bypass signals
-          </p>
+          <p className="text-xs uppercase text-orange-100">Payment bypass signals</p>
           <ul className="mt-2 grid gap-2 text-xs leading-5 text-orange-50">
             {data.riskyClientPaymentSignals.map((signal) => (
               <li className="break-words" key={signal}>
@@ -526,10 +696,10 @@ function EcommercePanel({
   );
 }
 
-function DnsPanel({ data, language }: { data: DnsSignal; language: Language }) {
+function DnsPanel({ data, t }: { data: DnsSignal; t: (typeof copy)[Language] }) {
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-      <SectionTitle eyebrow="DNS" title={language === "mn" ? "Имэйл ба домэйн" : "Email and domain"} />
+      <SectionTitle eyebrow={t.dns} title={t.emailDomain} />
       <dl className="mt-4 grid gap-3 text-sm">
         <MetricRow label="MX" value={data.mx.join(", ") || "-"} />
         <MetricRow label="SPF" value={data.spf ?? "-"} />
@@ -540,52 +710,53 @@ function DnsPanel({ data, language }: { data: DnsSignal; language: Language }) {
   );
 }
 
-function TlsPanel({ data, language }: { data: TlsSignal; language: Language }) {
-  const yes = language === "mn" ? "Тийм" : "Yes";
-  const no = language === "mn" ? "Үгүй" : "No";
-  const unknown = language === "mn" ? "Мэдэгдэхгүй" : "Unknown";
-
+function TlsPanel({ data, t }: { data: TlsSignal; t: (typeof copy)[Language] }) {
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-      <SectionTitle eyebrow="TLS" title={language === "mn" ? "Сертификат" : "Certificate"} />
+      <SectionTitle eyebrow="TLS" title={t.cert} />
       <dl className="mt-4 grid gap-3 text-sm">
-        <MetricRow label="Enabled" value={data.enabled ? yes : no} />
+        <MetricRow label={t.enabled} value={data.enabled ? t.yes : t.no} />
         <MetricRow
-          label="Trusted"
-          value={data.authorized === null ? unknown : data.authorized ? yes : no}
+          label={t.trusted}
+          value={data.authorized === null ? t.unknown : data.authorized ? t.yes : t.no}
         />
-        <MetricRow label="Protocol" value={data.protocol ?? "-"} />
-        <MetricRow label="Cipher" value={data.cipher ?? "-"} />
-        <MetricRow label="Issuer" value={data.issuer ?? "-"} />
-        <MetricRow label="Valid to" value={data.validTo ?? "-"} />
+        <MetricRow label={t.protocol} value={data.protocol ?? "-"} />
+        <MetricRow label={t.cipher} value={data.cipher ?? "-"} />
+        <MetricRow label={t.issuer} value={data.issuer ?? "-"} />
+        <MetricRow label={t.validTo} value={data.validTo ?? "-"} />
       </dl>
     </section>
   );
 }
 
-function PagesTable({ pages, language }: { pages: PageSignal[]; language: Language }) {
+function PagesTable({
+  pages,
+  t,
+  language,
+}: {
+  pages: PageSignal[];
+  t: (typeof copy)[Language];
+  language: Language;
+}) {
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
-      <SectionTitle
-        eyebrow={language === "mn" ? "Crawl" : "Crawl"}
-        title={language === "mn" ? "Шалгасан checkout/cart/login хуудсууд" : "Checked checkout/cart/login pages"}
-      />
+      <SectionTitle eyebrow={t.crawlEyebrow} title={t.crawlTitle} />
       <div className="mt-4 max-h-[460px] overflow-auto rounded-md border border-white/10">
         <table className="w-full border-collapse text-left text-xs">
           <thead className="bg-black/30 text-slate-400">
             <tr>
-              <th className="p-3">Kind</th>
+              <th className="p-3">{t.kindCol}</th>
               <th className="p-3">HTTPS</th>
-              <th className="p-3">Forms</th>
-              <th className="p-3">Providers</th>
+              <th className="p-3">{t.formsCol}</th>
+              <th className="p-3">{t.providersCol}</th>
               <th className="p-3">URL</th>
             </tr>
           </thead>
           <tbody>
             {pages.map((page) => (
               <tr className="border-t border-white/10" key={page.url}>
-                <td className="p-3 text-slate-200">{page.kind}</td>
-                <td className="p-3">{page.https ? "yes" : "no"}</td>
+                <td className="p-3 text-slate-200">{KIND_LABELS[language][page.kind]}</td>
+                <td className="p-3">{page.https ? t.yes : t.no}</td>
                 <td className="p-3">{page.forms}</td>
                 <td className="p-3">{page.providers.join(", ") || "-"}</td>
                 <td className="break-all p-3 text-slate-400">{page.url}</td>
@@ -598,7 +769,15 @@ function PagesTable({ pages, language }: { pages: PageSignal[]; language: Langua
   );
 }
 
-function EvidenceList({ title, items }: { title: string; items: string[] }) {
+function EvidenceList({
+  title,
+  items,
+  emptyLabel,
+}: {
+  title: string;
+  items: string[];
+  emptyLabel: string;
+}) {
   return (
     <section className="rounded-lg border border-white/10 bg-white/[0.04] p-5">
       <SectionTitle eyebrow="Evidence" title={title} />
@@ -614,7 +793,7 @@ function EvidenceList({ title, items }: { title: string; items: string[] }) {
           ))}
         </ul>
       ) : (
-        <p className="mt-4 text-sm text-slate-400">No browser runtime errors found.</p>
+        <p className="mt-4 text-sm text-slate-400">{emptyLabel}</p>
       )}
     </section>
   );
@@ -631,9 +810,7 @@ function HeaderTable({ headers, title }: { headers: Record<string, string>; titl
           <tbody>
             {rows.map(([name, value]) => (
               <tr className="border-b border-white/10 last:border-0" key={name}>
-                <th className="w-1/3 p-3 align-top font-mono text-xs text-cyan-200">
-                  {name}
-                </th>
+                <th className="w-1/3 p-3 align-top font-mono text-xs text-cyan-200">{name}</th>
                 <td className="break-all p-3 text-slate-300">{value}</td>
               </tr>
             ))}
@@ -655,7 +832,7 @@ function SectionTitle({ eyebrow, title }: { eyebrow: string; title: string }) {
 
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[120px_1fr] gap-3 border-b border-white/10 pb-2 last:border-0 last:pb-0">
+    <div className="grid grid-cols-[140px_1fr] gap-3 border-b border-white/10 pb-2 last:border-0 last:pb-0">
       <dt className="text-slate-500">{label}</dt>
       <dd className="break-words text-slate-200">{value}</dd>
     </div>
