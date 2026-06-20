@@ -162,6 +162,223 @@ const PLATFORM_HINTS: Record<string, RegExp> = {
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
+const SEVERITY_ORDER: Severity[] = ["critical", "high", "medium", "low", "info", "good"];
+
+const FINDING_TRANSLATIONS_MN: Record<
+  string,
+  { title?: string; evidence?: string; impact: string; recommendation: string }
+> = {
+  "no-https": {
+    title: "HTTPS ашиглагдаагүй",
+    evidence: "Хуудасны эцсийн URL нь HTTP байна.",
+    impact: "Хэрэглэгчийн нэр, нууц үг, хаяг, төлбөрийн мэдээлэл дамжуулалтын явцад гуравдагч этгээдэд уншигдах эсвэл өөрчлөгдөх боломжтой.",
+    recommendation: "Сайтыг HTTPS-ээр ажиллуул, HTTP хүсэлтийг автоматаар HTTPS руу дамжуул.",
+  },
+  "tls-invalid": {
+    title: "TLS сертификат итгэмжлэгдээгүй",
+    evidence: "TLS handshake дууссан, гэхдээ сертификат зөвшөөрөгдөөгүй.",
+    impact: "Хөтөч аюулын анхааруулга харуулна, халдагч сайтыг дуурайлган хэрэглэгчийн мэдээлэл хулгайлж болно.",
+    recommendation: "Энэ hostname-д зориулсан хүчинтэй сертификат суулга, бүрэн chain багтаа.",
+  },
+  "tls-old": {
+    title: "Хуучин TLS протокол ашиглагдаж байна",
+    impact: "Хуучин TLS хувилбарт мэдэгдэж буй сул талууд байдаг, compliance шалгалтад тэнцэхгүй байж болно.",
+    recommendation: "TLS 1.0/1.1-ийг идэвхгүй болгож, TLS 1.2 эсвэл TLS 1.3 ашигла.",
+  },
+  "missing-hsts": {
+    title: "HSTS header байхгүй",
+    evidence: "Strict-Transport-Security header олдсонгүй.",
+    impact: "Хэрэглэгч дахин нэвтрэх үед браузер HTTPS-ийг заавал шаардахаасаа өмнө HTTP руу буцаж унах боломж байна.",
+    recommendation: "HTTPS бүх газарт ажилж байгааг шалгасны дараа урт max-age-тай Strict-Transport-Security нэм.",
+  },
+  "missing-csp": {
+    title: "Content Security Policy (CSP) байхгүй",
+    evidence: "Content-Security-Policy header олдсонгүй.",
+    impact: "Скрипт оруулах (XSS) алдаа гарбал халдагчийн хортой код хэрэглэгчийн хөтөч дээр ажиллана. Checkout хуудаснаас QPay болон хэрэглэгчийн мэдээлэл хулгайлж болно.",
+    recommendation: "Зөвхөн хэрэглэдэг скрипт, стиль, фрэйм, холболтыг зөвшөөрдөг хязгаарлагдмал CSP нэм.",
+  },
+  "weak-csp": {
+    title: "CSP аюултай эх сурвалж зөвшөөрч байна",
+    impact: "Өргөн CSP эх сурвалж нь cross-site scripting-ийн эсрэг хамгаалалтыг сулруулна.",
+    recommendation: "Wildcard болон unsafe-inline-ийг хаана боломжтой арилга; шаардлагатай inline кодод nonce эсвэл hash ашигла.",
+  },
+  "clickjacking": {
+    title: "Clickjacking хамгаалалт байхгүй",
+    evidence: "X-Frame-Options header болон CSP frame-ancestors directive олдсонгүй.",
+    impact: "Халдагч таны сайтыг өөр сайтад iframe-аар оруулж, хэрэглэгчийг харагдахгүй товч дарах буюу захиалга баталгаажуулахыг хууран мэхэлж болно.",
+    recommendation: "CSP frame-ancestors эсвэл X-Frame-Options: DENY/SAMEORIGIN тохируул.",
+  },
+  "no-nosniff": {
+    title: "X-Content-Type-Options байхгүй",
+    evidence: "X-Content-Type-Options: nosniff олдсонгүй.",
+    impact: "Хөтөч файлыг буруу content type-аар тайлбарлаж хортой код ажиллуулах боломжтой болно.",
+    recommendation: "X-Content-Type-Options: nosniff тохируул.",
+  },
+  "no-referrer-policy": {
+    title: "Referrer Policy байхгүй",
+    evidence: "Referrer-Policy header олдсонгүй.",
+    impact: "Захиалга ID, хайлт, хувийн мэдээлэл агуулсан бүрэн URL нь Referer header-аар гуравдагч сайтуудад дамжиж болно.",
+    recommendation: "Referrer-Policy тохируул, ихэвчлэн strict-origin-when-cross-origin хэрэглэнэ.",
+  },
+  "no-permissions-policy": {
+    title: "Браузерын зөвшөөрлийн бодлого байхгүй",
+    evidence: "Permissions-Policy header олдсонгүй.",
+    impact: "Камер, микрофон, байршил зэрэг ашиглагдаагүй функцүүд оруулагдсан эсвэл эвдэрсэн кодод хүртээмжтэй хэвээр байна.",
+    recommendation: "Permissions-Policy тохируулж камер, микрофон, геолокаци болон ашиглагдаагүй функцүүдийг хаа.",
+  },
+  "cookie-secure": {
+    title: "Cookie-д Secure тэмдэглэгээ байхгүй",
+    evidence: "Нэг буюу хэд хэдэн Set-Cookie header-д Secure байхгүй.",
+    impact: "HTTP endpoint байгаа бол сессийн cookie HTTP-ээр дамжиж халдагч дунд орж хулгайлах боломжтой.",
+    recommendation: "Authentication болон state cookie-д Secure тэмдэглэгээ нэм.",
+  },
+  "cookie-httponly": {
+    title: "Cookie-д HttpOnly тэмдэглэгээ байхгүй",
+    evidence: "Нэг буюу хэд хэдэн Set-Cookie header-д HttpOnly байхгүй.",
+    impact: "Хортой JavaScript оруулагдвал cookie-н утгыг хулгайлж хэрэглэгчийн сессийг булааж болно.",
+    recommendation: "Browser JavaScript хандалт шаардлагагүй cookie-д HttpOnly нэм.",
+  },
+  "cookie-samesite": {
+    title: "Cookie-д SameSite тэмдэглэгээ байхгүй",
+    evidence: "Нэг буюу хэд хэдэн Set-Cookie header-д SameSite байхгүй.",
+    impact: "SameSite байхгүй cookie cross-site хүсэлтэд дагалдаж болно, CSRF халдлагын эрсдэл нэмэгдэнэ.",
+    recommendation: "Cross-origin хандалт шаардлагагүй cookie-д SameSite=Strict эсвэл SameSite=Lax нэм.",
+  },
+  "x-powered-by": {
+    title: "X-Powered-By header-аар технологи задарч байна",
+    impact: "Framework-ийн тодорхой хувилбарыг мэдэхэд мэдэгдэж буй сул талыг ашиглахад хялбар болно.",
+    recommendation: "Сервер эсвэл framework тохиргоонд X-Powered-By header-ийг дарах эсвэл хас.",
+  },
+  "cert-expiry-soon": {
+    impact: "Сертификат дуусвал хэрэглэгч браузерын аюулын анхааруулга харна, HTTPS болон дэлгүүр ажиллахаа болино.",
+    recommendation: "Сертификатыг дуусахаас өмнө шинэчил; Let's Encrypt-ийн автомат шинэчлэлтийг тохируулахыг зөвлөнө.",
+  },
+  "password-http": {
+    title: "Нууц үгийн талбар аюулгүй бус хуудас дээр байна",
+    impact: "Нэвтрэх мэдээлэл дамжуулалтын явцад уншигдаж эсвэл өөрчлөгдөж болно.",
+    recommendation: "Нэвтрэх болон бүртгэлийн маягтыг яаралтай HTTPS руу шилжүүл.",
+  },
+  "mixed-content": {
+    title: "HTTPS хуудас HTTP asset ачааллаж байна",
+    impact: "Mixed content хөтчөөр блоклогдох эсвэл халдагчид өөрчлөгдөх боломжтой.",
+    recommendation: "Бүх зураг, скрипт, стиль, фрэймийг HTTPS-ээр ачаал.",
+  },
+  "inline-script-surface": {
+    title: "CSP байхгүйд inline скрипт их байна",
+    impact: "Inline скрипт олон байх нь XSS-ийг хянахад хэцүү болгоно.",
+    recommendation: "Inline скриптийг bundle asset руу шилжүүл, CSP nonce/hash стратеги ашигла.",
+  },
+  "runtime-errors": {
+    title: "Браузерын ажиллах үеийн алдаа илэрсэн",
+    impact: "Эвдэрсэн скрипт болон амжилтгүй resource нь хамгаалалтын control эсвэл чухал хэрэглэгчийн урсгалыг идэвхгүй болгож болно.",
+    recommendation: "Хуудас ачаалах үед олдсон амжилтгүй браузерын хүсэлт болон JavaScript алдааг засна уу.",
+  },
+  "header-coverage": {
+    title: "Хамгаалалтын header бүрхэлт",
+    impact: "Хамгаалалтын header илүү бүрэн байх нь нийтлэг client-side халдлагын замыг багасгана.",
+    recommendation: "Хамгаалалтын header-ийг зориудаар тохируулж, deployment бүрийн дараа шалга.",
+  },
+  "ecom-insecure-sensitive-page": {
+    title: "Checkout, cart эсвэл login хуудас HTTPS биш",
+    impact: "Хэрэглэгчийн нэвтрэх мэдээлэл, хаяг, төлбөрийн мэдээлэл дамжуулалтын явцад уншигдаж эсвэл өөрчлөгдөж болно.",
+    recommendation: "Cart, checkout, login, account болон төлбөрийн бүх URL-д HTTPS-ийг албадан хэрэгжүүл.",
+  },
+  "checkout-not-found": {
+    title: "Checkout хуудас олдсонгүй",
+    impact: "Checkout нуугдсан, блоклогдсон эсвэл cart-ийн дараа л үүсдэг бол сканнер checkout-ийн аюулгүй байдлыг баталгаажуулж чадахгүй.",
+    recommendation: "Мэдэгдэж буй checkout/cart замуудыг нийтэд нээлттэй болго эсвэл энэ сайтад authenticated/manual checkout тест ажиллуул.",
+  },
+  "payment-provider-not-found": {
+    title: "Төлбөрийн систем танигдсангүй",
+    evidence: "Stripe, PayPal, Shopify, WooCommerce, QPay, MonPay, SocialPay эсвэл ижил төстэй төлбөрийн дохио олдсонгүй.",
+    impact: "Хэрэглэгч хэн нь төлбөр боловсруулж байгааг мэдэхгүй байж болно; custom төлбөрийн урсгалд гүнзгий manual шалгалт хэрэгтэй.",
+    recommendation: "Төлбөрийн системийг баримтжуулж, мэдрэмжтэй төлбөрийн боловсруулалтыг найдвартай PCI-нийцтэй үйлчилгээний хуудсанд байлга.",
+  },
+  "suspicious-payment-routes": {
+    title: "Браузерт exploit-д бэлэн төлбөрийн зам илэрсэн — МАШ АЮУЛТАЙ",
+    impact: "Яаг юу болох вэ: Хуудас ачаалах үед браузерын console/failed request-д /cart/free/buy, skip_payment=1, amount=0, эсвэл callback URL бүтэц харагдсан. Халдагч: 1) Тэр URL-ийг шууд нээх эсвэл браузерын хаягийн мөрөнд өөрчлөх. 2) Төлбөр хийхгүйгээр захиалга илгээх. 3) Хэрэв сервер төлбөрийн статусыг бие даан шалгахгүй бол захиалга 'дууссан' гэж тэмдэглэгдэж бараа явуулна. Энэ мэдлэг 1 удаа амжилтанд орвол цахим хэлэлцүүлгийн бүлгүүдэд цагийн дотор тарана.",
+    recommendation: "ЯАРАЛТАЙ засах: 1) /cart/free эсвэл skip_payment гэсэн аливаа замыг устга эсвэл нэвтрэлт тэнхлэгийн ард хаа. 2) URL query параметрээс amount, paid, order_status зэрэг утгыг ХЭЗЭЭ Ч бүү ав — серверт дахин тооцоол. 3) Захиалгыг 'дууссан' гэж тэмдэглэхийн өмнө QPay/банкнаас серверт баталгаажуулалт авах. 4) Debug/test/admin payment замуудыг production-д устга эсвэл authentication-ны ард хаа. 5) Codebase-д эдгээр pattern хайж, order статуст хүрэх бүх код замыг audit хий.",
+  },
+  "qpay-detected": {
+    title: "QPay дохио илэрсэн — серверт баталгаажуулалт заавал хэрэгтэй",
+    evidence: "QPay мөр, холбоос эсвэл скрипт нийтийн хуудаснаас олдсон.",
+    impact: "Яаг юу болох вэ: Хэрэв бэкэнд QPay invoice статусыг зөвхөн browser callback-аас авдаг бол — 1) Халдагч бараа сагсанд хийж checkout-д хүрнэ. 2) QPay QR гарна, гэхдээ халдагч төлбөр хийхгүй. 3) Browser DevTools → Network tab дээр webhook/callback URL-ийг тогтооно. 4) Тэр URL руу ?status=paid&invoice_id=хуурамч гэж хүсэлт явуулна. 5) Сервер QPay-аас шалгахгүй бол захиалгыг \"төлсөн\" гэж тэмдэглэж бараа явуулна. Нэг удаа амжилтанд орвол энэ мэдлэг чат, форумаар тараагдаж маш богино хугацаанд олон хүн ашиглана.",
+    recommendation: "Засах дараалал: 1) QPay invoice үүсгэхдээ серверт тооцсон дүнг ашигла. 2) Callback/webhook ирэхэд QPay REST API-аас invoice_id болон статусыг шалга — PAID эсэх, дүн тохирч байгаа эсэхийг. 3) Browser-аас ирсэн \"paid=true\", \"status=success\", \"invoice_id=...\" утгыг ХЭЗЭЭ Ч бие даан бүү ашигла. 4) Authorized QPay sandbox тест хий: төлбөр хийхгүйгээр callback URL руу хуурамч хүсэлт явуулж, систем зөв татгалзаж байгааг баталга.",
+  },
+  "client-payment-tamper-risk": {
+    title: "Клиент талын төлбөр өөрчлөх эрсдэл илэрсэн — яаралтай засна уу",
+    impact: "Яаг юу болох вэ (жишээ халдлага): 1) Халдагч checkout хуудас дээр F12 → Elements эсвэл Network tab нээнэ. 2) amount=50000 гэсэн hidden input эсвэл хүсэлтийн дүнг amount=1 болгож өөрчилнэ. 3) 1₮ QPay төлбөр хийж, callback явуулна. 4) Сервер клиентийн дүнг ашиглавал 50,000₮-ийн захиалгыг 1₮-ийн үнээр баталгаажуулна. Coupon/discount логик байгаа бол discount=100 гэж оруулж бүтэн захиалгыг үнэгүй болгож болно. Нэг удаа амжилтанд орвол социал медиа, чат-аар маш хурдан тараагдаж олон хүн ашиглана.",
+    recommendation: "ЯАРАЛТАЙ засах: 1) Checkout дүнг ЗӨВХӨН серверт тооцоол — cart item × qty, хөнгөлөлт, татвар бүгдийг серверт хий. 2) QPay invoice-ийг серверийн тооцсон дүнгээр үүсгэ, клиентийн дүнг бүү ашигла. 3) Callback ирэхэд QPay API-аас invoice_id болон amount-ийг тулга. 4) Клиентийн илгээсэн amount, total, paid, discount, order_status утгыг бизнес логикт хэзээ ч бүү ашигла. 5) Test: DevTools-аар amount өөрчил, захиалга явуул, сервер татгалзаж байгааг баталга.",
+  },
+  "payment-bypass-surface": {
+    title: "Нийтийн төлбөрийн bypass дохио олдсонгүй",
+    impact: "Нийтийн скан дээр илт дохио олдсонгүй — энэ сайн тал. Гэхдээ checkout логик нь зөвхөн authenticated flow-д л харагдана тул бүрэн баталгаажуулж чадахгүй.",
+    recommendation: "Authorized checkout тест хий: 1) Staging орчинд cart-д бараа хийж checkout-д хүрч, DevTools-аар amount/total field-ийн утгыг өөрчил. 2) QPay sandbox invoice үүсгэж, серверийн тооцсон дүнтэй тохирч байгааг шалга. 3) Webhook/callback дуусгахгүйгээр хуурамч \"paid\" хүсэлт явуулж, сервер татгалзаж байгааг баталга. 4) Server log-д клиентийн дүн vs серверийн тооцсон дүн тулгагдаж байгааг шалга.",
+  },
+  "checkout-third-party-scripts": {
+    title: "Checkout дээр ер бусын гуравдагч скрипт байна",
+    impact: "Checkout дээрх гуравдагч скрипт нь хэрэглэгчийн нэр, хаяг, QPay болон бусад мэдээллийг харж дамжуулах боломжтой.",
+    recommendation: "Checkout дээр зөвхөн шаардлагатай analytics/төлбөрийн скриптийг зөвшөөр, хатуу checkout CSP хэрэгжүүл.",
+  },
+  "privacy-policy-missing": {
+    title: "Нууцлалын бодлого олдсонгүй",
+    evidence: "Нийтийн нууцлалын бодлогын зам/холбоос илэрсэнгүй.",
+    impact: "Хэрэглэгч хувийн мэдээлэл, хаяг, утасны дугаар, төлбөрийн мэдээлэл хэрхэн хадгалагдаж байгааг мэдэхгүй байж болно.",
+    recommendation: "Footer, checkout болон бүртгэлийн хуудсанд холбогдсон тодорхой нууцлалын бодлого нэм.",
+  },
+  "refund-policy-missing": {
+    title: "Буцаалтын бодлого олдсонгүй",
+    evidence: "Нийтийн буцаалт/буцааж өгөх/цуцлах бодлогын зам/холбоос илэрсэнгүй.",
+    impact: "Буцаалтын нөхцөл тодорхойгүй бол төлбөрийн маргаан, хэрэглэгчийн дэмжлэгийн ачаалал нэмэгдэнэ.",
+    recommendation: "Checkout болон footer-д буцаалт, буцааж өгөх, цуцлах, хүргэлтийн нөхцөлийг нэм.",
+  },
+  "cookie-consent-not-detected": {
+    title: "Cookie зөвшөөрөл олдсонгүй",
+    evidence: "Нийтийн HTML-д cookie/зөвшөөрөл/tracking дохио олдсонгүй.",
+    impact: "Analytics, зар, chat эсвэл retargeting скрипт ажиллаж байгаа бол хэрэглэгчид мэдэгдэхгүй байж болно.",
+    recommendation: "Дэлгүүр борлуулж буй зах зээлд тохирсон cookie зөвшөөрлийн механизм нэм.",
+  },
+  "mx-missing": {
+    title: "MX бичлэг олдсонгүй",
+    evidence: "Root домэйнд MX бичлэг байхгүй.",
+    impact: "Захиалгын имэйл, дэмжлэгийн хариу, нууц үг сэргээлт болон маргааны боловсруулалт бүтэлгүйтэж эсвэл сэжигтэй харагдаж болно.",
+    recommendation: "Найдвартай шуудан хостинг тохируулж, захиалга/дэмжлэгийн имэйл хүргэлтийг тест хий.",
+  },
+  "spf-missing": {
+    title: "SPF бичлэг олдсонгүй",
+    evidence: "v=spf1 TXT бичлэг олдсонгүй.",
+    impact: "Халдагч таны дэлгүүрийн нэрээр хуурамч имэйл илгээж хэрэглэгчийг хуурч мэдрэмжтэй мэдээлэл хулгайлахад хялбар болно.",
+    recommendation: "Энэ домэйнд шуудан илгээдэг бүх үйлчилгээнд SPF нэм.",
+  },
+  "dmarc-missing": {
+    title: "DMARC бичлэг олдсонгүй",
+    evidence: "_dmarc TXT бичлэг олдсонгүй.",
+    impact: "Хуурамч захиалга, нэхэмжлэл, буцаалтын имэйлийг хүлээн авах серверүүд татгалзахад хэцүү болно.",
+    recommendation: "DMARC нэм, эхлэлд мониторингоор эхэл, дараа quarantine эсвэл reject руу шилж.",
+  },
+  "dmarc-not-enforced": {
+    title: "DMARC зөвхөн мониторинг горимд байна (p=none)",
+    impact: "Таны домэйнаас хуурамч имэйл илгээхэд хүлээн авах серверүүд татгалзахгүй — зөвхөн тайлагнадаг.",
+    recommendation: "DMARC aggregate тайланг 2–4 долоо хоног шалгасны дараа p=quarantine, дараа нь p=reject руу шилж.",
+  },
+  "spf-allow-all": {
+    title: "SPF бүх серверт зөвшөөрөл олгож байна (+all)",
+    impact: "Интернэтийн аль ч сервер таны домэйнаас ирсэн мэт харагдах имэйл илгээж болно.",
+    recommendation: "+all-ийг -all болгоож, зөвхөн бодитой ашигладаг илгээх үйлчилгээнүүдийг л жагса.",
+  },
+  "spf-softfail": {
+    title: "SPF soft-fail ашиглаж байна (~all)",
+    impact: "Хүлээн авах серверүүд SPF-д тэнцэхгүй хуурамч имэйлийг татгалзахын оронд хүлээн авч болно.",
+    recommendation: "Бүх хуурмаг илгээх эх сурвалжийг жагссаны дараа -all (хатуу татгалзал) руу шилж.",
+  },
+  "caa-missing": {
+    title: "CAA бичлэг олдсонгүй",
+    evidence: "CAA бичлэг олдсонгүй.",
+    impact: "Аль ч сертификатын байгууллага энэ домэйнд сертификат олгох боломжтой хэвээр байна.",
+    recommendation: "Бодитой ашигладаг сертификатын байгууллагуудад зориулсан CAA бичлэг нэм.",
+  },
+};
+
 export function normalizePublicUrl(input: string) {
   const withProtocol = /^[a-z][a-z\d+\-.]*:\/\//i.test(input)
     ? input
@@ -208,12 +425,16 @@ export async function scanWebsite(
   ]);
 
   const ecommerce = await inspectEcommerce(url, responseSignal.body);
-  const findings = buildFindings(
+  const rawFindings = buildFindings(
     responseSignal,
     tlsSignal,
     browserSignal,
     dnsSignal,
     ecommerce,
+  );
+  const findings = language === "mn" ? translateFindingsMn(rawFindings) : rawFindings;
+  findings.sort(
+    (a, b) => SEVERITY_ORDER.indexOf(a.severity) - SEVERITY_ORDER.indexOf(b.severity),
   );
   const metrics = buildMetrics(
     findings,
@@ -752,7 +973,7 @@ function buildFindings(
     findings.push(finding("runtime-errors", "Browser runtime problems detected", "medium", "Reliability", [...browser.consoleErrors, ...browser.failedRequests].slice(0, 4).join(" | "), "Broken scripts and failed resources can disable security controls or important user flows.", "Fix failed browser requests and JavaScript errors found during page load."));
   }
 
-  addEcommerceFindings(findings, ecommerce, dnsSignal);
+  addEcommerceFindings(findings, ecommerce, dnsSignal, browser);
 
   const presentHeaders = SECURITY_HEADERS.filter((header) => headers[header]);
   findings.push(finding("header-coverage", "Security header coverage", "good", "Headers", `${presentHeaders.length}/${SECURITY_HEADERS.length} expected headers were present.`, "More complete browser security headers reduce common client-side attack paths.", "Keep security headers intentional and test them after every deployment."));
@@ -760,11 +981,92 @@ function buildFindings(
   return findings;
 }
 
+const SUSPICIOUS_ROUTE_CHECKS: [RegExp, string, string][] = [
+  [
+    /\/cart\/free|\/buy\/free|\/order\/free|\/checkout\/free/i,
+    "free-purchase-route",
+    "Free purchase route in browser signals",
+  ],
+  [
+    /skip[_-]?payment|bypass[_-]?payment|skip[_-]?checkout/i,
+    "skip-payment-param",
+    "Payment skip/bypass keyword in browser signals",
+  ],
+  [
+    /[?&](paid|payment_status|order_status)=(true|1|paid|complete|success)/i,
+    "presigned-paid-url",
+    "Pre-set paid/complete status in URL",
+  ],
+  [
+    /[?&](amount|total|price)=0(&|$|")/i,
+    "zero-amount-url",
+    "Zero-amount order parameter in URL",
+  ],
+  [
+    /[?&](discount|coupon)=100/i,
+    "full-discount-url",
+    "100% discount parameter in URL",
+  ],
+  [
+    /\b(debug|test|mock)[_-]?payment\b/i,
+    "debug-payment-exposed",
+    "Debug/test payment endpoint visible publicly",
+  ],
+  [
+    /\/admin\/(order|payment|checkout)/i,
+    "admin-payment-exposed",
+    "Admin order/payment endpoint appeared in browser",
+  ],
+  [
+    /(qpay|payment|order)[^/\s]{0,30}(callback|confirm|success|verify)/i,
+    "callback-url-exposed",
+    "Payment callback URL structure visible in browser",
+  ],
+];
+
+function detectSuspiciousRouteSignals(
+  browser: BrowserSignal,
+  ecommerce: EcommerceSignal,
+): { label: string; examples: string[] }[] {
+  const sources = [
+    ...browser.consoleErrors,
+    ...browser.failedRequests,
+    ...ecommerce.discoveredUrls,
+    ...ecommerce.pagesChecked.map((p) => p.url),
+  ];
+
+  const hits: { label: string; examples: string[] }[] = [];
+  for (const [pattern, , label] of SUSPICIOUS_ROUTE_CHECKS) {
+    const matched = sources.filter((s) => pattern.test(s)).slice(0, 2).map((s) => s.slice(0, 140));
+    if (matched.length) {
+      hits.push({ label, examples: matched });
+    }
+  }
+  return hits;
+}
+
 function addEcommerceFindings(
   findings: Finding[],
   ecommerce: EcommerceSignal,
   dnsSignal: DnsSignal,
+  browser: BrowserSignal,
 ) {
+  const suspiciousRoutes = detectSuspiciousRouteSignals(browser, ecommerce);
+  if (suspiciousRoutes.length) {
+    const evidenceLines = suspiciousRoutes.map((h) => `${h.label}: ${h.examples.join(" | ")}`);
+    findings.push(
+      finding(
+        "suspicious-payment-routes",
+        "Exploit-ready payment routes detected in browser",
+        "critical",
+        "Payments",
+        evidenceLines.join("\n"),
+        "These URLs or patterns appeared in the browser during page load (console errors, failed requests, or links). An attacker who sees /cart/free/buy, skip_payment=1, amount=0, or a payment callback URL does the following: (1) opens the URL directly or modifies it in the browser bar, (2) submits the order without paying, (3) if the server does not validate payment status independently, the order is marked complete and goods are dispatched for free. Once working, the method is shared publicly within hours.",
+        "1) Remove or 401-gate any route that skips payment (e.g. /cart/free). 2) Never accept payment status, amount, or order state from URL query parameters — always recalculate server-side. 3) Require server-side payment provider confirmation before marking any order complete. 4) Move debug/admin payment routes behind authentication and remove them from production. 5) Search your codebase for these patterns and audit every code path that touches order status.",
+      ),
+    );
+  }
+
   const sensitiveInsecurePages = ecommerce.pagesChecked.filter(
     (page) =>
       !page.https &&
@@ -1001,6 +1303,31 @@ async function createAiReview(
       error: error instanceof Error ? error.message : "Gemini review failed.",
     };
   }
+}
+
+function translateFindingsMn(findings: Finding[]): Finding[] {
+  return findings.map((f) => {
+    const t = FINDING_TRANSLATIONS_MN[f.id];
+    if (!t) return f;
+    if (f.id === "cert-expiry-soon") {
+      return {
+        ...f,
+        title: f.title.replace(
+          /TLS certificate expires in (\d+) days?/,
+          (_: string, days: string) => `TLS сертификат ${days} өдрийн дотор дуусна`,
+        ),
+        impact: t.impact,
+        recommendation: t.recommendation,
+      };
+    }
+    return {
+      ...f,
+      title: t.title ?? f.title,
+      evidence: t.evidence ?? f.evidence,
+      impact: t.impact,
+      recommendation: t.recommendation,
+    };
+  });
 }
 
 function finding(
