@@ -468,14 +468,22 @@ async function inspectEcommerce(url: URL, homeHtml: string): Promise<EcommerceSi
     privacy: hasPageKind(pages, "policy", /privacy/i),
     terms: hasPageKind(pages, "policy", /terms|conditions|service/i),
     refund: hasPageKind(pages, "policy", /refund|return|cancel/i),
-    contact: pages.some((page) => /contact/i.test(page.url)),
+    contact: pages.some(
+      (page) =>
+        /contact/i.test(page.url) && page.status !== null && page.status < 400,
+    ),
   };
   const lower = homeHtml.toLowerCase();
   const ecomSignals = [
     /add to cart|checkout|cart|sku|product|buy now|захиалах|сагс|төлөх|худалдан/i.test(
       homeHtml,
     ),
-    pages.some((page) => ["cart", "checkout", "product"].includes(page.kind)),
+    pages.some(
+      (page) =>
+        ["cart", "checkout", "product"].includes(page.kind) &&
+        page.status !== null &&
+        page.status < 400,
+    ),
     paymentProviders.length > 0,
     platform.length > 0,
   ];
@@ -489,9 +497,15 @@ async function inspectEcommerce(url: URL, homeHtml: string): Promise<EcommerceSi
     discoveredUrls: discovered.map((item) => item.toString()),
     policies,
     cookieConsent: /cookie|cookies|consent|privacy settings|tracking/i.test(homeHtml),
-    checkoutPages: pages.filter((page) => page.kind === "checkout").length,
-    cartPages: pages.filter((page) => page.kind === "cart").length,
-    loginPages: pages.filter((page) => page.kind === "login").length,
+    checkoutPages: pages.filter(
+      (page) => page.kind === "checkout" && page.status !== null && page.status < 400,
+    ).length,
+    cartPages: pages.filter(
+      (page) => page.kind === "cart" && page.status !== null && page.status < 400,
+    ).length,
+    loginPages: pages.filter(
+      (page) => page.kind === "login" && page.status !== null && page.status < 400,
+    ).length,
     suspiciousCheckoutScripts: Array.from(
       new Set(
         pages
@@ -854,7 +868,7 @@ async function createAiReview(
           ],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 1400,
+            maxOutputTokens: 2500,
           },
         }),
       },
@@ -1099,5 +1113,11 @@ function hasPageKind(
   kind: PageSignal["kind"],
   urlPattern: RegExp,
 ) {
-  return pages.some((page) => page.kind === kind && urlPattern.test(page.url));
+  return pages.some(
+    (page) =>
+      page.kind === kind &&
+      urlPattern.test(page.url) &&
+      page.status !== null &&
+      page.status < 400,
+  );
 }
