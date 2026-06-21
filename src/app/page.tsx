@@ -120,7 +120,7 @@ interface InvoiceData {
   amount: number;
 }
 
-const defaultUrl = "https://example.com";
+const defaultUrl = "";
 const severityOrder: Severity[] = ["critical", "high", "medium", "low", "info", "good"];
 
 const METRIC_LABELS: Record<Language, Record<string, string>> = {
@@ -177,9 +177,9 @@ const copy = {
   mn: {
     badge: "E-commerce хамгаалалтын лаборатори",
     title:
-      "Онлайн дэлгүүр, checkout, QPay, DNS, cookie, privacy, төлбөрийн эрсдэлийг нэг дор шалгана.",
+      "Таны онлайн дэлгүүр халдлагад хэр өртөмхий вэ? 60 секундэд шалгаарай.",
     subtitle:
-      "Бодит сайт руу exploit, brute force, үнэгүй худалдан авалт хийхгүй. Харин public evidence-ээр худалдагчид яг юугаа засахыг хэлнэ.",
+      "Checkout, QPay, cookie, DNS, имэйлийн эрсдэлийг public evidence-ээр илрүүлж, яг юугаа засахыг тань хэлнэ.",
     url: "Вэбсайт URL",
     run: "Шалгах",
     scanning: "Шалгаж байна...",
@@ -248,6 +248,22 @@ const copy = {
     criticalFound: (n: number) => `${n} АЮУЛТ АЛДАА ИЛЭРЛЭЭ`,
     urgencyAlert: (n: number) => `⚠ АНХААР — ${n} аюулт эрсдэл илэрлээ`,
     urgencyAlertSub: "Таны дэлгүүрийн checkout болон QPay хамгаалалт одоо эрсдэлтэй байна. Засах заавар доор байна.",
+    urgencyHead: (n: number) => `⚠ ${n} эрсдэл илэрлээ — засах заавар доор түгжээтэй`,
+    improveHead: (n: number) => `${n} сайжруулах зүйл олдлоо`,
+    improveSub:
+      "Ноцтой эрсдэл олдсонгүй — гэхдээ хамгаалалтаа чангатгах боломжууд бий. Дэлгэрэнгүй засварыг доороос нээнэ үү.",
+    bannerSub: {
+      payment:
+        "Таны checkout/QPay урсгалд төлбөр тойрох боломжит эрсдэл илэрлээ. Яг юуг, хэрхэн засахыг доор харна уу.",
+      transport:
+        "Хэрэглэгчийн нэвтрэх болон захиалгын мэдээлэл хамгаалалтгүй дамжих эрсдэлтэй. Засах заавар доор түгжээтэй.",
+      email:
+        "Таны домэйнаас хуурамч имэйл (spoofing/фишинг) илгээх эрсдэлтэй. Засах заавар доор түгжээтэй.",
+      headers:
+        "XSS халдлага болон cookie/session хулгайлах зам нээлттэй байна. Засах заавар доор түгжээтэй.",
+      generic:
+        "Таны дэлгүүрийн хамгаалалтад нэн даруй анхаарах зүйл илэрлээ. Засах заавар доор түгжээтэй.",
+    },
     compareOld: "Мэргэжлийн аудит",
     compareOldPrice: "₮150,000",
     compareNew: "Автомат тайлан — ӨНӨӨДӨР",
@@ -259,9 +275,9 @@ const copy = {
   en: {
     badge: "E-commerce Security Lab",
     title:
-      "Audit online shops, checkout, QPay, DNS, cookies, privacy, and payment risk in one scan.",
+      "How exposed is your online shop? Scan it in 60 seconds.",
     subtitle:
-      "No exploit payloads, brute force, or free-purchase attempts against live sites. It uses public evidence to tell owners what to fix.",
+      "We surface checkout, QPay, cookie, DNS, and email risks from public evidence — and tell you exactly what to fix.",
     url: "Website URL",
     run: "Run scan",
     scanning: "Scanning...",
@@ -330,6 +346,22 @@ const copy = {
     criticalFound: (n: number) => `${n} CRITICAL ISSUE${n === 1 ? "" : "S"} FOUND`,
     urgencyAlert: (n: number) => `⚠ WARNING — ${n} critical risk${n === 1 ? "" : "s"} detected`,
     urgencyAlertSub: "Your checkout and QPay integration have exposed vulnerabilities. Fix instructions are locked below.",
+    urgencyHead: (n: number) => `⚠ ${n} risk${n === 1 ? "" : "s"} found — fixes locked below`,
+    improveHead: (n: number) => `${n} improvement${n === 1 ? "" : "s"} found`,
+    improveSub:
+      "No severe risks found — but there are ways to harden your shop. Unlock the detailed fixes below.",
+    bannerSub: {
+      payment:
+        "Possible payment-bypass risk found in your checkout/QPay flow. See exactly what and how to fix below.",
+      transport:
+        "Login and order data may travel without protection. Fix instructions are locked below.",
+      email:
+        "Your domain can be used to send spoofed/phishing email. Fix instructions are locked below.",
+      headers:
+        "XSS and cookie/session theft paths are open. Fix instructions are locked below.",
+      generic:
+        "Your shop has security issues that need attention. Fix instructions are locked below.",
+    },
     compareOld: "Professional audit",
     compareOldPrice: "₮150,000",
     compareNew: "Automated report — TODAY",
@@ -361,6 +393,35 @@ export default function Home() {
     }
     return base;
   }, [data]);
+
+  const banner = useMemo(() => {
+    const findings = data?.findings ?? [];
+    const urgent = findings.filter(
+      (finding) => finding.severity === "critical" || finding.severity === "high",
+    );
+    const has = (category: string) => urgent.some((finding) => finding.category === category);
+
+    if (urgent.length === 0) {
+      const improvable = counts.medium + counts.low;
+      return {
+        tone: "amber" as const,
+        head: t.improveHead(improvable),
+        sub: t.improveSub,
+      };
+    }
+
+    let angle: "payment" | "transport" | "email" | "headers" | "generic" = "generic";
+    if (has("Payments")) angle = "payment";
+    else if (has("Transport") || has("Forms") || has("E-commerce")) angle = "transport";
+    else if (has("DNS")) angle = "email";
+    else if (has("Headers") || has("Cookies") || has("Browser")) angle = "headers";
+
+    return {
+      tone: "red" as const,
+      head: t.urgencyHead(urgent.length),
+      sub: t.bannerSub[angle],
+    };
+  }, [data, counts, t]);
 
   useEffect(() => {
     if (!invoiceData || isPaid) return;
@@ -512,24 +573,52 @@ export default function Home() {
         {data ? (
           <div className="grid gap-5">
             {!isPaid ? (
-              <section className="relative overflow-hidden rounded-xl border border-red-500/40 bg-red-950/30 p-4 sm:p-5">
+              <section
+                className={`relative overflow-hidden rounded-xl border p-4 sm:p-5 ${
+                  banner.tone === "red"
+                    ? "border-red-500/40 bg-red-950/30"
+                    : "border-amber-400/30 bg-amber-950/20"
+                }`}
+              >
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
                   <div className="flex items-start gap-3 sm:flex-1 sm:min-w-0">
                     <span className="relative mt-1 flex size-3 shrink-0">
-                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                      <span className="relative inline-flex size-3 rounded-full bg-red-500" />
+                      <span
+                        className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${
+                          banner.tone === "red" ? "bg-red-400" : "bg-amber-400"
+                        }`}
+                      />
+                      <span
+                        className={`relative inline-flex size-3 rounded-full ${
+                          banner.tone === "red" ? "bg-red-500" : "bg-amber-500"
+                        }`}
+                      />
                     </span>
                     <div>
-                      <p className="text-sm font-semibold text-red-200 sm:text-base">
-                        {t.urgencyAlert(counts.critical + counts.high)}
+                      <p
+                        className={`text-sm font-semibold sm:text-base ${
+                          banner.tone === "red" ? "text-red-200" : "text-amber-100"
+                        }`}
+                      >
+                        {banner.head}
                       </p>
-                      <p className="mt-1 text-xs leading-5 text-red-300/80 sm:text-sm sm:leading-6">{t.urgencyAlertSub}</p>
+                      <p
+                        className={`mt-1 text-xs leading-5 sm:text-sm sm:leading-6 ${
+                          banner.tone === "red" ? "text-red-300/80" : "text-amber-200/80"
+                        }`}
+                      >
+                        {banner.sub}
+                      </p>
                     </div>
                   </div>
                   <button
                     onClick={handleCreatePayment}
                     disabled={isCreatingPayment}
-                    className="w-full rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-red-400 disabled:opacity-60 sm:w-auto sm:shrink-0"
+                    className={`w-full rounded-lg px-4 py-2.5 text-sm font-semibold text-white transition disabled:opacity-60 sm:w-auto sm:shrink-0 ${
+                      banner.tone === "red"
+                        ? "bg-red-500 hover:bg-red-400"
+                        : "bg-cyan-500 hover:bg-cyan-400"
+                    }`}
                   >
                     {isCreatingPayment ? t.unlockCreating : `${t.unlockBtn} — ${t.unlockPrice}`}
                   </button>
